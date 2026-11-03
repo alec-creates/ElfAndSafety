@@ -4,29 +4,27 @@ using UnityEngine;
 namespace ElfAndSafety
 {
     /// <summary>
-    /// Drops one test batch of broken robots and parts onto the delivery table as loose physics objects.
-    /// Only one batch exists at a time; the development reset removes everything the batch spawned,
+    /// Drops delivery waves of broken toys and loose parts onto the delivery table as loose physics objects.
+    /// In practice, Request Delivery drops the current day's first wave, one batch at a time; during a shift
+    /// the workday delivers the day's waves on schedule. The development reset removes everything delivered,
     /// wherever it ended up.
     /// </summary>
     public class DeliveryChute : MonoBehaviour
     {
-        [SerializeField] TestDeliveryBatch batch;
-        [SerializeField] RobotBody robotPrefab;
-        [SerializeField] RobotPart batteryPrefab;
-        [SerializeField] RobotPart deadBatteryPrefab;
-        [SerializeField] RobotPart windingKeyPrefab;
+        [Tooltip("One prefab per toy type.")]
+        [SerializeField] ToyBody[] toyPrefabs;
+        [Tooltip("One prefab per part kind and condition (e.g. Battery and Dead Battery).")]
+        [SerializeField] ToyPart[] partPrefabs;
         [Tooltip("One per delivered item. Items drop in slightly above these and settle with physics.")]
         [SerializeField] Transform[] spawnPoints;
         [SerializeField] float spawnClearance = 0.12f;
         [SerializeField] TextMesh statusLabel;
-        [Tooltip("Deliveries are refused if the batch can't produce at least this many valid robots.")]
-        [SerializeField] int minimumCompletableRobots = 2;
-        [Tooltip("Optional. When set, Request Delivery and DEV reset only work before the shift starts.")]
+        [Tooltip("Supplies the practice wave, and closes Request Delivery and DEV reset during a shift.")]
         [SerializeField] WorkdayManager workday;
 
         readonly List<Carryable> spawned = new List<Carryable>();
 
-        /// <summary>Everything the current batch spawned that is still in play, in spawn order.</summary>
+        /// <summary>Everything delivered that is still in play, in spawn order.</summary>
         public IReadOnlyList<Carryable> SpawnedItems
         {
             get
@@ -35,6 +33,8 @@ namespace ElfAndSafety
                 return spawned;
             }
         }
+
+        public int SpawnPointCount => spawnPoints != null ? spawnPoints.Length : 0;
 
         /// <summary>On a co-op client the batch lives on the host, so this mirrors the host's answer.</summary>
         public bool HasActiveBatch => NetworkSession.IsRemoteClient ? mirroredBatchOut : SpawnedItems.Count > 0;
@@ -59,11 +59,13 @@ namespace ElfAndSafety
                 return false;
             }
 
-            return CanSpawnBatch(out reason);
+            return CanSpawn(PracticeWave, out reason);
         }
 
         /// <summary>DEV reset is a practice tool: refused during (and after) a scored shift.</summary>
         public bool CanDevReset(out string reason) => PracticeToolsAllowed(out reason);
+
+        DeliveryWave PracticeWave => workday != null ? workday.PracticeWave : DeliveryWave.Robots();
 
         bool PracticeToolsAllowed(out string reason)
         {
@@ -77,27 +79,38 @@ namespace ElfAndSafety
             return false;
         }
 
-        bool CanSpawnBatch(out string reason)
+        bool CanSpawn(DeliveryWave wave, out string reason)
         {
-            if (batch == null || robotPrefab == null || batteryPrefab == null || deadBatteryPrefab == null || windingKeyPrefab == null)
+            if (wave == null)
             {
-                reason = "Delivery chute is not set up";
+                reason = "Nothing to deliver";
                 return false;
             }
 
-            if (batch.CompletableRobots() < minimumCompletableRobots)
+            foreach (DeliveredToy toy in wave.toys)
             {
-                reason = $"Test batch can't complete {minimumCompletableRobots} robots. Fix the batch asset";
+                if (FindToyPrefab(toy.toy) == null)
+                {
+                    reason = $"Delivery chute has no {ToyRecipe.ToyName(toy.toy)} prefab";
+                    return false;
+                }
+                foreach (PartSpec part in toy.installed)
+                {
+                    if (FindPartPrefab(part) == null) return MissingPart(part, out reason);
+                }
+            }
+            foreach (PartSpec part in wave.looseParts)
+            {
+                if (FindPartPrefab(part) == null) return MissingPart(part, out reason);
+            }
+
+            if (SpawnPointCount < wave.ItemCount)
+            {
+                reason = $"The {wave.label} delivery has {wave.ItemCount} items but the table only has {SpawnPointCount} spots";
                 return false;
             }
 
-            if (spawnPoints.Length < batch.ItemCount)
-            {
-                reason = $"Test batch has {batch.ItemCount} items but the table only has {spawnPoints.Length} spots";
-                return false;
-            }
-
-            if (!SpawnPointsClear(batch.ItemCount))
+            if (!SpawnPointsClear(wave.ItemCount))
             {
                 reason = "Delivery table is cluttered. Clear it first";
                 return false;
@@ -107,7 +120,13 @@ namespace ElfAndSafety
             return true;
         }
 
-        /// <summary>Spawns the batch onto the delivery table. Refused while a batch is still in play.</summary>
+        static bool MissingPart(PartSpec part, out string reason)
+        {
+            reason = $"Delivery chute has no {(part.working ? "" : ToyRecipe.BrokenWord(part.kind) + " ")}{ToyRecipe.PartName(part.kind)} prefab";
+            return false;
+        }
+
+        /// <summary>Practice: drops the day's first wave onto the table. Refused while a batch is still in play.</summary>
         public bool TryRequestDelivery()
         {
             if (!CanRequestDelivery(out string reason))
@@ -116,56 +135,83 @@ namespace ElfAndSafety
                 return false;
             }
 
-            SpawnBatch();
+            SpawnWave(PracticeWave);
             return true;
         }
 
         /// <summary>
-        /// Shift start: clears whatever practice items are around and delivers the one batch for the shift.
+        /// Shift start: clears whatever practice items are around and delivers the first wave.
         /// Bypasses the practice-only gate, which is about to close.
         /// </summary>
-        internal bool DeliverForShift(out string reason)
+        internal bool DeliverForShift(DeliveryWave wave, out string reason)
         {
             ClearBatch();
-            if (!CanSpawnBatch(out reason))
+            if (!CanSpawn(wave, out reason))
             {
                 return false;
             }
 
-            SpawnBatch();
+            SpawnWave(wave);
             return true;
         }
 
-        void SpawnBatch()
+        /// <summary>A later wave during the shift: adds to what's already out without clearing it.</summary>
+        internal bool TryDeliverWave(DeliveryWave wave, out string reason)
+        {
+            if (!CanSpawn(wave, out reason))
+            {
+                return false;
+            }
+
+            SpawnWave(wave);
+            return true;
+        }
+
+        void SpawnWave(DeliveryWave wave)
         {
             int next = 0;
-            foreach (TestDeliveryBatch.RobotEntry entry in batch.robots)
+            foreach (DeliveredToy delivered in wave.toys)
             {
                 Transform point = spawnPoints[next++];
-                RobotBody robot = Spawn(robotPrefab, point);
-                robot.SetDirty(entry.dirty);
-                if (entry.battery == TestDeliveryBatch.BatteryCondition.Working) robot.TryInstall(Spawn(batteryPrefab, point));
-                if (entry.battery == TestDeliveryBatch.BatteryCondition.Dead) robot.TryInstall(Spawn(deadBatteryPrefab, point));
-                if (entry.hasKey) robot.TryInstall(Spawn(windingKeyPrefab, point));
-            }
-
-            foreach (TestDeliveryBatch.LoosePart part in batch.looseParts)
-            {
-                RobotPart prefab = part switch
+                ToyBody toy = Spawn(FindToyPrefab(delivered.toy), point);
+                toy.SetDirty(delivered.dirty);
+                foreach (PartSpec part in delivered.installed)
                 {
-                    TestDeliveryBatch.LoosePart.WorkingBattery => batteryPrefab,
-                    TestDeliveryBatch.LoosePart.DeadBattery => deadBatteryPrefab,
-                    _ => windingKeyPrefab,
-                };
-                Spawn(prefab, spawnPoints[next++]);
+                    toy.TryInstall(Spawn(FindPartPrefab(part), point));
+                }
             }
 
-            WorkshopFeedback.Info("Delivery! Broken robots on the delivery table");
+            foreach (PartSpec part in wave.looseParts)
+            {
+                Spawn(FindPartPrefab(part), spawnPoints[next++]);
+            }
+
+            WorkshopFeedback.Info($"Delivery! {wave.label} on the delivery table");
             RefreshLabel();
         }
 
+        ToyBody FindToyPrefab(ToyType type)
+        {
+            if (toyPrefabs == null) return null;
+            foreach (ToyBody prefab in toyPrefabs)
+            {
+                if (prefab != null && prefab.Type == type) return prefab;
+            }
+            return null;
+        }
+
+        ToyPart FindPartPrefab(PartSpec spec)
+        {
+            if (partPrefabs == null) return null;
+            foreach (ToyPart prefab in partPrefabs)
+            {
+                if (prefab != null && prefab.Kind == spec.kind && prefab.IsWorking == spec.working) return prefab;
+            }
+            return null;
+        }
+
         /// <summary>
-        /// Development action: removes every item from the current batch so a new one can be requested.
+        /// Development action: removes everything delivered so a new practice batch can be requested.
         /// Refused during a scored shift so it can't be used to replenish parts.
         /// </summary>
         public bool ResetTestBatch()
@@ -181,7 +227,7 @@ namespace ElfAndSafety
             return true;
         }
 
-        /// <summary>Going online: practice items exist only on this machine, so remove them quietly.</summary>
+        /// <summary>Going online or starting over: remove everything delivered, quietly.</summary>
         internal void ClearForSession() => ClearBatch();
 
         void ClearBatch()

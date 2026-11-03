@@ -34,11 +34,29 @@ namespace ElfAndSafety
         public Transform CameraPivot => cameraPivot;
         public float Pitch => pitch;
 
+        Vector3 spawnPosition;
+        Quaternion spawnRotation;
+
         void Awake()
         {
             controller = GetComponent<CharacterController>();
             input = GetComponent<PlayerInputReader>();
+            spawnPosition = transform.position;
+            spawnRotation = transform.rotation;
             GameLayers.ApplyCollisionRules();
+        }
+
+        /// <summary>Back to where this elf started, able to move, for the next day without reloading.</summary>
+        internal void ResetToSpawn()
+        {
+            controller.enabled = false;
+            transform.SetPositionAndRotation(spawnPosition, spawnRotation);
+            controller.enabled = true;
+            horizontalVelocity = Vector3.zero;
+            verticalVelocity = 0f;
+            pitch = 0f;
+            cameraPivot.localRotation = Quaternion.identity;
+            MovementEnabled = true;
         }
 
         void Update()

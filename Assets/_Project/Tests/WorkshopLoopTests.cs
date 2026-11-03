@@ -22,7 +22,7 @@ namespace ElfAndSafety.Tests
         ShipmentCounter counter;
 
         // Default batch, in spawn order: A = dirty + dead battery + key, B = dirty and empty, C = clean + working battery.
-        RobotBody robotA, robotB, robotC;
+        ToyBody robotA, robotB, robotC;
 
         [UnitySetUp]
         public IEnumerator SetUp()
@@ -38,7 +38,7 @@ namespace ElfAndSafety.Tests
             counter = Object.FindAnyObjectByType<ShipmentCounter>();
 
             Assert.IsTrue(chute.TryRequestDelivery(), "First delivery should spawn");
-            RobotBody[] robots = Robots();
+            ToyBody[] robots = Robots();
             Assert.AreEqual(3, robots.Length);
             (robotA, robotB, robotC) = (robots[0], robots[1], robots[2]);
             AssertOwnershipConsistent();
@@ -64,19 +64,19 @@ namespace ElfAndSafety.Tests
         [Test]
         public void Salvage_RecoversEachInstalledPartExactlyOnce()
         {
-            int partsBefore = Object.FindObjectsByType<RobotPart>().Length;
-            RobotPart deadBattery = robotA.Battery;
-            RobotPart key = robotA.WindingKey;
+            int partsBefore = Object.FindObjectsByType<ToyPart>().Length;
+            ToyPart deadBattery = robotA.Battery;
+            ToyPart key = robotA.WindingKey;
 
             Assert.IsFalse(player.RequestPickUp(key.Carryable), "Installed parts can't be grabbed directly");
 
             Carry(robotA);
             PlaceOn(salvage);
-            Assert.AreSame(robotA, salvage.FindRobot());
+            Assert.AreSame(robotA, salvage.FindToy());
 
-            Assert.IsTrue(salvage.TryRemovePart(player, RobotPartKind.Battery));
-            Assert.IsFalse(salvage.TryRemovePart(player, RobotPartKind.Battery), "Removing twice must do nothing");
-            Assert.IsTrue(salvage.TryRemovePart(player, RobotPartKind.WindingKey));
+            Assert.IsTrue(salvage.TryRemovePart(player, PartKind.Battery));
+            Assert.IsFalse(salvage.TryRemovePart(player, PartKind.Battery), "Removing twice must do nothing");
+            Assert.IsTrue(salvage.TryRemovePart(player, PartKind.WindingKey));
 
             Assert.IsNull(robotA.Battery);
             Assert.IsNull(robotA.WindingKey);
@@ -85,15 +85,15 @@ namespace ElfAndSafety.Tests
             Assert.IsNull(deadBattery.transform.parent, "No longer attached to the robot");
             Assert.Less(Vector3.Distance(deadBattery.transform.position, salvage.OutputPoints[0].position), 0.01f, "Popped out at the first output spot");
             Assert.Less(Vector3.Distance(key.transform.position, salvage.OutputPoints[1].position), 0.01f, "First spot was taken, so the next one");
-            Assert.AreSame(robotA, salvage.FindRobot(), "The body stays on the bench");
-            Assert.AreEqual(partsBefore, Object.FindObjectsByType<RobotPart>().Length, "No parts created or lost");
+            Assert.AreSame(robotA, salvage.FindToy(), "The body stays on the bench");
+            Assert.AreEqual(partsBefore, Object.FindObjectsByType<ToyPart>().Length, "No parts created or lost");
             AssertOwnershipConsistent();
         }
 
         [Test]
         public void Salvage_WithBlockedOutputs_HandsPartToEmptyHandedPlayer()
         {
-            RobotPart[] looseParts = LooseParts();
+            ToyPart[] looseParts = LooseParts();
             for (int i = 0; i < salvage.OutputPoints.Length; i++)
             {
                 looseParts[i].Carryable.SetLoose(salvage.OutputPoints[i].position, Quaternion.identity, Vector3.zero);
@@ -101,12 +101,12 @@ namespace ElfAndSafety.Tests
 
             Carry(robotA);
             PlaceOn(salvage);
-            RobotPart deadBattery = robotA.Battery;
+            ToyPart deadBattery = robotA.Battery;
 
-            Assert.IsTrue(salvage.TryRemovePart(player, RobotPartKind.Battery));
+            Assert.IsTrue(salvage.TryRemovePart(player, PartKind.Battery));
             Assert.AreSame(deadBattery.Carryable, player.Held);
 
-            Assert.IsFalse(salvage.TryRemovePart(player, RobotPartKind.WindingKey), "Nowhere to put it: the key must stay installed");
+            Assert.IsFalse(salvage.TryRemovePart(player, PartKind.WindingKey), "Nowhere to put it: the key must stay installed");
             Assert.IsNotNull(robotA.WindingKey);
             AssertOwnershipConsistent();
         }
@@ -124,7 +124,7 @@ namespace ElfAndSafety.Tests
 
             Carry(robotA);
             Assert.IsFalse(cleaning.CanInteract(player, out string busy), "Only one body at a time");
-            StringAssert.Contains("already has a robot", busy);
+            StringAssert.Contains("already has a toy", busy);
             player.RequestDrop();
 
             yield return new WaitForSeconds(cleaning.CleanDuration + 0.25f);
@@ -145,14 +145,14 @@ namespace ElfAndSafety.Tests
             Vector3 above = assembly.PlacePoint.position + new Vector3(0.2f, 0.4f, 0f);
             robotC.Carryable.SetLoose(above, assembly.PlacePoint.rotation, Vector3.zero);
             yield return new WaitForSeconds(1f);
-            Assert.AreSame(robotC, assembly.FindRobot(), "A robot that lands on the bench counts");
+            Assert.AreSame(robotC, assembly.FindToy(), "A robot that lands on the bench counts");
 
             // Knocked off the bench (later: walks away by itself): the bench lets it go.
             robotC.Carryable.SetLoose(new Vector3(0f, 0.3f, 0f), Quaternion.identity, Vector3.zero);
             yield return new WaitForSeconds(0.5f);
-            Assert.IsNull(assembly.FindRobot());
+            Assert.IsNull(assembly.FindToy());
 
-            Carry(LooseParts().First(p => p.Kind == RobotPartKind.WindingKey));
+            Carry(LooseParts().First(p => p.Kind == PartKind.WindingKey));
             Assert.IsFalse(assembly.TryInstallHeld(player), "Nothing on the bench to install into");
             AssertOwnershipConsistent();
         }
@@ -163,7 +163,7 @@ namespace ElfAndSafety.Tests
             Carry(robotC);
             PlaceOn(assembly);
 
-            RobotPart key = LooseParts().First(p => p.Kind == RobotPartKind.WindingKey);
+            ToyPart key = LooseParts().First(p => p.Kind == PartKind.WindingKey);
             Carry(key);
             Assert.IsTrue(assembly.TryInstallHeld(player));
             Assert.AreSame(key, robotC.WindingKey);
@@ -172,7 +172,7 @@ namespace ElfAndSafety.Tests
             Assert.IsNull(player.Held);
             Assert.IsFalse(player.RequestPickUp(key.Carryable));
 
-            RobotPart spareBattery = LooseParts().First(p => p.Kind == RobotPartKind.Battery && p.IsWorking);
+            ToyPart spareBattery = LooseParts().First(p => p.Kind == PartKind.Battery && p.IsWorking);
             Carry(spareBattery);
             Assert.IsFalse(assembly.TryInstallHeld(player), "Battery slot is already filled");
             Assert.AreSame(spareBattery.Carryable, player.Held, "Refused part stays in hand");
@@ -184,20 +184,20 @@ namespace ElfAndSafety.Tests
         {
             Carry(robotA);
             Assert.IsFalse(shipping.TrySubmit(player));
-            StringAssert.Contains(RobotInspection.DirtyBody, shipping.LastResult);
-            StringAssert.Contains(RobotInspection.DeadBattery, shipping.LastResult);
+            StringAssert.Contains(ToyInspection.DirtyBody, shipping.LastResult);
+            StringAssert.Contains(ToyInspection.DeadBattery, shipping.LastResult);
             Assert.AreEqual(CarryState.Loose, robotA.Carryable.State, "Dumped loose into the reject bin");
             Assert.Less(Vector3.Distance(robotA.transform.position, shipping.RejectDropPoints[0].position), 0.01f);
 
             Carry(robotB);
             Assert.IsFalse(shipping.TrySubmit(player));
-            StringAssert.Contains(RobotInspection.MissingBattery, shipping.LastResult);
-            StringAssert.Contains(RobotInspection.MissingKey, shipping.LastResult);
+            StringAssert.Contains(ToyInspection.MissingBattery, shipping.LastResult);
+            StringAssert.Contains(ToyInspection.MissingKey, shipping.LastResult);
 
             Carry(robotC);
             Assert.IsFalse(shipping.TrySubmit(player));
-            StringAssert.Contains(RobotInspection.MissingKey, shipping.LastResult);
-            StringAssert.DoesNotContain(RobotInspection.DirtyBody, shipping.LastResult);
+            StringAssert.Contains(ToyInspection.MissingKey, shipping.LastResult);
+            StringAssert.DoesNotContain(ToyInspection.DirtyBody, shipping.LastResult);
 
             Assert.AreEqual(0, counter.Shipped);
             Assert.IsNull(player.Held);
@@ -215,7 +215,7 @@ namespace ElfAndSafety.Tests
             // Salvage the dead battery, clean the body.
             Carry(robotA);
             PlaceOn(salvage);
-            Assert.IsTrue(salvage.TryRemovePart(player, RobotPartKind.Battery));
+            Assert.IsTrue(salvage.TryRemovePart(player, PartKind.Battery));
             Carry(robotA);
             PlaceOn(cleaning);
             yield return new WaitForSeconds(cleaning.CleanDuration + 0.25f);
@@ -224,7 +224,7 @@ namespace ElfAndSafety.Tests
             // Fit the loose working battery (the key never left).
             Carry(robotA);
             PlaceOn(assembly);
-            Carry(LooseParts().First(p => p.Kind == RobotPartKind.Battery && p.IsWorking));
+            Carry(LooseParts().First(p => p.Kind == PartKind.Battery && p.IsWorking));
             Assert.IsTrue(assembly.TryInstallHeld(player));
             Carry(robotA);
 
@@ -238,7 +238,7 @@ namespace ElfAndSafety.Tests
             // Second robot: robot C only needs the loose key.
             Carry(robotC);
             PlaceOn(assembly);
-            Carry(LooseParts().First(p => p.Kind == RobotPartKind.WindingKey));
+            Carry(LooseParts().First(p => p.Kind == PartKind.WindingKey));
             Assert.IsTrue(assembly.TryInstallHeld(player));
             Carry(robotC);
             Assert.IsTrue(shipping.TrySubmit(player), shipping.LastResult);
@@ -252,7 +252,7 @@ namespace ElfAndSafety.Tests
             // Ship robot C so the counter is non-zero, then leave things scattered and mid-operation.
             Carry(robotC);
             PlaceOn(assembly);
-            Carry(LooseParts().First(p => p.Kind == RobotPartKind.WindingKey));
+            Carry(LooseParts().First(p => p.Kind == PartKind.WindingKey));
             assembly.TryInstallHeld(player);
             Carry(robotC);
             Assert.IsTrue(shipping.TrySubmit(player));
@@ -261,8 +261,8 @@ namespace ElfAndSafety.Tests
             PlaceOn(cleaning);
             Carry(robotA);
             PlaceOn(salvage);
-            salvage.TryRemovePart(player, RobotPartKind.Battery);
-            Carry(LooseParts().First(p => p.Kind == RobotPartKind.Battery && p.IsWorking));
+            salvage.TryRemovePart(player, PartKind.Battery);
+            Carry(LooseParts().First(p => p.Kind == PartKind.Battery && p.IsWorking));
             yield return null;
             Assert.IsTrue(cleaning.IsCleaning, "Reset should interrupt a scrub in progress");
 
@@ -274,9 +274,9 @@ namespace ElfAndSafety.Tests
             Assert.AreEqual(1, counter.Shipped, "Reset leaves the shipped count alone");
 
             yield return null;
-            Assert.AreEqual(0, Object.FindObjectsByType<RobotBody>().Length);
-            Assert.AreEqual(0, Object.FindObjectsByType<RobotPart>().Length);
-            Assert.IsNull(salvage.FindRobot());
+            Assert.AreEqual(0, Object.FindObjectsByType<ToyBody>().Length);
+            Assert.AreEqual(0, Object.FindObjectsByType<ToyPart>().Length);
+            Assert.IsNull(salvage.FindToy());
 
             Assert.IsTrue(chute.TryRequestDelivery(), "A fresh batch can be requested after a reset");
             Assert.AreEqual(3, Robots().Length);
@@ -285,10 +285,10 @@ namespace ElfAndSafety.Tests
 
         // ---------------------------------------------------------------- Helpers
 
-        RobotBody[] Robots() => chute.SpawnedItems.Select(i => i.GetComponent<RobotBody>()).Where(r => r != null).ToArray();
+        ToyBody[] Robots() => chute.SpawnedItems.Select(i => i.GetComponent<ToyBody>()).Where(r => r != null).ToArray();
 
-        RobotPart[] LooseParts() => chute.SpawnedItems
-            .Select(i => i.GetComponent<RobotPart>())
+        ToyPart[] LooseParts() => chute.SpawnedItems
+            .Select(i => i.GetComponent<ToyPart>())
             .Where(p => p != null && p.Carryable.State == CarryState.Loose)
             .ToArray();
 
@@ -312,7 +312,7 @@ namespace ElfAndSafety.Tests
         /// <summary>Every delivered item is referenced by exactly the one owner its state says, and no other.</summary>
         void AssertOwnershipConsistent()
         {
-            RobotBody[] robots = Object.FindObjectsByType<RobotBody>();
+            ToyBody[] robots = Object.FindObjectsByType<ToyBody>();
 
             foreach (Carryable item in chute.SpawnedItems)
             {

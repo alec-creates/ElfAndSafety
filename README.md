@@ -8,6 +8,10 @@ The workshop looks cheerful. Management is not.
 
 ## Current status
 
+**Milestone 6 (more toys and wish orders) is implemented, and its play test is pending.** Alongside the wind-up robot there are now teddy bears and toy cars, and each day has a wish list of kids' orders, including **cyborg bears** (a teddy bear fitted with a robot battery and winding key). A shipped toy must exactly match an open order. All 44 automated PlayMode tests pass; it hasn't been played by hand yet, and the Workshop scene needs the builder re-run.
+
+**Milestone 5 (the Christmas countdown) is implemented, and its play test is pending.** The game is now a week: seven days counting down from 7 days until Christmas to Christmas Eve, each with its own quota, shift length and delivery waves, getting harder. Pass a day to move on; fail one and it's back to day 1; survive Christmas Eve to win. All 38 automated PlayMode tests pass. It hasn't been played by hand yet, and the Workshop scene needs the builder re-run.
+
 **Milestone 4 (two-player co-op proof) is implemented, and its two-player play test is pending.** One player hosts and a second joins. Both elves share one workshop: either player can carry toys, use every station, ship robots and clock in, and both see the same shift timer, shipped count and verdict. The host decides everything; the other player's actions are requests the host checks. All 30 automated PlayMode tests pass, but a second player joining can't be tested automatically, so the two-player checks below still need doing by hand.
 
 Part 1 (shared workshop and carrying) was tried by the developer in Multiplayer Play Mode on 2026-11-03; the one issue reported, that Player 2 couldn't salvage, was part 1's intended host-only limit, which part 2 removes.
@@ -22,6 +26,38 @@ Milestone 2 is complete: the repair loop passed its automated tests and a develo
 | 2 — First toy loop | Robot delivery, salvage, cleaning, assembly, shipping | ✅ Complete (automated tests and developer play test) |
 | 3 — A full workday | Timer, quota, Santa's verdict, trapdoor failure, restart | ✅ Complete (automated tests and developer play test) |
 | 4 — Co-op proof | Two players sharing objects and synchronized workday state | 🟨 Implemented (parts 1 and 2); automated tests pass; two-player play test pending |
+| 5 — Christmas countdown | Seven days to Christmas with rising quotas and delivery waves; fail = back to day 1 | 🟨 Implemented; automated tests pass; manual play test pending |
+| 6 — More toys and orders | Bear and car; kids' wish orders such as a cyborg bear (a bear fitted with robot parts) | 🟨 Implemented; automated tests pass; manual play test pending |
+| 7 — Bad-part malfunctions | Faulty parts that make assembled toys misbehave, to catch before shipping | ⬜ Planned |
+
+### Milestone 6 verification
+
+| Check | How | Result |
+|---|---|---|
+| Scripts compile; builder creates the bear, car, stuffing, button eyes and wheel set prefabs, upgrades the existing robot prefab to general slots (keeping its art), and removes the old delivery asset | Batch mode, in a copy with settings identical to the developer's project | ✅ 0 errors, 0 warnings, 0 missing scripts |
+| Earlier milestones regression, on the generalized toy code | The 38 other PlayMode tests (expectations updated only for the new wording and wave contents) | ✅ Pass |
+| Toys have their slots: bear (stuffing, eyes, battery, key), car (battery, two wheel sets) | `ToyTests` | ✅ Pass |
+| Inspection: plain bear vs cyborg bear (robot parts "weren't on the wish list" for a plain bear), car missing a wheel set, wrong toy | `ToyTests` | ✅ Pass |
+| Slots refuse a full slot and a part the toy has no slot for | `ToyTests` | ✅ Pass |
+| Assembly bench fits a wheel set into the empty wheel slot, attached to the car | `ToyTests` | ✅ Pass |
+| Shipping fills the matching wish order (board ticks it); a plain bear on a cyborg-only day is rejected with what's missing; a toy whose orders are all filled is refused | `ToyTests` | ✅ Pass |
+| Every default day is winnable with its waves; impossible days (no bear delivered, no working battery, late wave, wave too big for the table) are refused | `CountdownTests` | ✅ Pass |
+| Bear and car visuals and mounts, prompts, wish list board legibility, difficulty | Manual play test | ⬜ Pending |
+
+### Milestone 5 verification
+
+| Check | How | Result |
+|---|---|---|
+| Scripts compile; builder creates the Christmas Countdown asset and connects it | Batch mode, in a copy with settings identical to the developer's project | ✅ 0 errors, 0 warnings, 0 missing scripts |
+| Earlier milestones regression | The 30 other PlayMode tests | ✅ Pass |
+| Default week: 7 days, every day winnable with its waves, quotas never go down; impossible days are refused | `CountdownTests` | ✅ Pass |
+| Day 1 is "7 days until Christmas", quota 2, 5:00, with a Santa note | `CountdownTests` | ✅ Pass |
+| Passing a day: Next Day starts day 2 in place (no reload); toys, count, verdict and last result cleared; elf unfrozen; quota 3 | `CountdownTests` | ✅ Pass |
+| Later delivery waves arrive on schedule, wait while the table is cluttered, and add to the first wave | `CountdownTests` | ✅ Pass |
+| Failing day 3 says "Back to 7 days until Christmas" and Back to Day 1 reloads at day 1 | `CountdownTests` | ✅ Pass |
+| Winning Christmas Eve shows MERRY CHRISTMAS!; Play Again starts the week over | `CountdownTests` | ✅ Pass |
+| Co-op: Next Day starts in place for everyone and the day is shared | `NetworkSessionTests` | ✅ Pass |
+| HUD day line and Santa note, verdict button labels, wave timing feel, difficulty curve | Manual play test | ⬜ Pending |
 
 ### Milestone 4 part 2 verification
 
@@ -131,7 +167,7 @@ Bindings are defined in code in `Assets/_Project/Scripts/Runtime/Player/PlayerIn
 | E or left click | Interact: pick up, place, remove part, install part, ship, press a button (including **CLOCK IN**) |
 | Q | Drop the carried item |
 | Esc | Release the mouse; click the game view to capture it again (that click doesn't interact) |
-| Mouse click or R (verdict screen) | Play Again / Retry |
+| Mouse click or R (verdict screen) | Next Day / Back to Day 1 / Play Again |
 
 ### Co-op test (two players on one PC)
 
@@ -158,16 +194,31 @@ Limits of this proof:
 - A player who joins mid-shift isn't handled specially.
 - For a second PC on your network, set **Address** on the joining machine's **Network Session** object (Workshop scene) to the host's IP. Playing over the internet needs a relay service and is not part of this milestone.
 
-### Playing a shift
+### Playing the week
 
-1. You spawn in **practice mode**. Everything works but nothing counts, and the top of the screen says so. Look around, or try the loop with **REQUEST DELIVERY**.
-2. Press E on the green **CLOCK IN** button on the red post just ahead and to the left of where you spawn. This removes any practice items (even one in your hands), sets the count to 0, drops the shift's batch onto the delivery table and starts the timer. The top of the screen shows the time left and **Shipped N / quota**; the time turns red under 30 seconds.
-3. Repair and ship robots as described below. Only accepted shipments count; rejected robots earn nothing. During the shift, Request Delivery and DEV reset are refused, so the one batch is all you get. It always contains enough parts for exactly two robots.
-4. **Reach the quota:** the shift ends at once. Santa congratulates you, with a **Play Again** button.
-5. **Run out of time:** you're pulled onto the trapdoor in front of Santa's window, the doors swing open over an orange glow, and you drop into the furnace pit. Then *"You've been reassigned to furnace operations"* appears with **Retry**.
-6. Once the shift ends, nothing can be picked up or shipped. Click the button or press **R** to reload a fresh Workshop: timer, count, delivery, stations and carried items all reset.
+The game is a countdown to Christmas: day 1 is "7 days until Christmas" and day 7 is Christmas Eve. The top of the screen always shows the day, and before clocking in it also shows Santa's note for the day.
 
-The deadline is strict. The timer is checked before player actions each frame, so a robot shipped in the very frame time runs out doesn't count, and there's only ever one verdict.
+| Day | Until Christmas | Wish list | Shift | Deliveries |
+|---|---|---|---|---|
+| 1 | 7 days | 2 robots | 5:00 | Robots |
+| 2 | 6 days | 2 robots, 1 bear | 5:00 | Robots, Bears (every 1:40) |
+| 3 | 5 days | 1 robot, 1 bear, 1 car | 5:00 | Robots, Bears, Cars (every 1:30) |
+| 4 | 4 days | 2 bears, 2 cars | 5:00 | Bears, Cars (every 1:30) |
+| 5 | 3 days | 2 robots, 2 cyborg bears | 5:00 | Robots, Cyborg kit (every 1:30) |
+| 6 | 2 days | 2 cars, 1 bear, 2 cyborg bears | 5:00 | Cars, Bears, Cyborg kit (every 1:20) |
+| 7 | Christmas Eve | 2 robots, 1 car, 1 bear, 2 cyborg bears | 5:00 | Robots, Cars, Cyborg kit, Bears (every 1:10) |
+
+Every order has a kid's name, such as *Timmy's wind-up robot*. The **WISH LIST** board on the east wall, between the shipping chute and the reject bin, lists today's orders and ticks them off as they ship.
+
+1. Each day starts in **practice mode**. Everything works but nothing counts, and the top of the screen says so. Look around, or try the loop with **REQUEST DELIVERY**.
+2. Press E on the green **CLOCK IN** button on the red post just ahead and to the left of where you spawn. This removes any practice items (even one in your hands), sets the count to 0, drops the first delivery onto the table and starts the timer. The top of the screen shows the time left, **Wishes filled N / total** and, on days with several deliveries, **Deliveries N / total**; the time turns red under 30 seconds.
+3. Repair toys and ship them as described below. During a shift a shipped toy must **exactly match an open order**: the right toy, a clean body, every part the order needs installed and working, and nothing extra. It then fills that order. Anything else is rejected with what's wrong, for example *"battery is missing, winding key is missing (for Jax's cyborg bear)"* or *"nobody on today's wish list wants a toy car"*. Later deliveries arrive on their own during the shift, and a day's deliveries always bring enough toy bodies and working parts for its whole wish list. If the delivery table is still cluttered when one is due, it waits ("A delivery is waiting") until there's room. During the shift, Request Delivery and DEV reset are refused.
+4. **Fill every wish:** the shift ends at once. Santa congratulates you and says tomorrow's quota, with **Next Day**. The next day starts right there, without reloading, in practice mode with a clean workshop.
+5. **Run out of time:** you're pulled onto the trapdoor in front of Santa's window, the doors swing open over an orange glow, and you drop into the furnace pit. Then *"You've been reassigned to furnace operations"* appears with **Back to Day 1**, and the week starts over.
+6. **Pass Christmas Eve:** *MERRY CHRISTMAS!* and **Play Again**, which starts the week over.
+7. Once a shift ends, nothing can be picked up or shipped. Click the button or press **R** to continue.
+
+The deadline is strict. The timer is checked before player actions each frame, so a toy shipped in the very frame time runs out doesn't count, and there's only ever one verdict.
 
 ### Playing the repair loop
 
@@ -228,7 +279,7 @@ Gameplay rules should remain independent of visual models. A replacement robot m
 | Assembly | Attach battery and winding key to a robot body | ✅ |
 | Shipping | Validate finished toys and award credit once | ✅ |
 | Workday | Timer, quota, success, and restart (one repeatable shift) | ✅ |
-| Workday | Multiple days and progression | ⬜ |
+| Workday | Seven-day Christmas countdown with rising quotas and delivery waves | 🟨 |
 | Santa | Verdict messages and placeholder trapdoor punishment | ✅ |
 | Co-op | Two-player shared workshop and carrying (part 1) | 🟨 |
 | Co-op | Shared stations, shipping and shift (part 2) | 🟨 |
@@ -243,27 +294,27 @@ Everything lives under `Assets/_Project/`. Runtime code is in the `ElfAndSafety.
 |---|---|
 | `Scripts/Runtime/Player/` | `FirstPersonController`, `PlayerInputReader` (bindings, cursor lock) |
 | `Scripts/Runtime/Interaction/` | `PlayerInteractor` (aiming, carrying), `Carryable` (single-owner physical object), `IInteractable`, `ICarryableOwner`, `IDescribable` |
-| `Scripts/Runtime/Toys/` | `RobotBody` (dirty state, battery and key slots), `RobotPart`, `RobotSlotTarget` (aim target on a part mount), `RobotInspection` (shipping rules) |
+| `Scripts/Runtime/Toys/` | `ToyBody` (toy type, dirty state, named part slots), `ToyPart`, `ToySlotTarget` (aim target on a part mount), `ToyRecipe` (toy types, part kinds, wish orders and recipes), `ToyInspection` (shipping rules) |
 | `Scripts/Runtime/Stations/` | `WorkStation` (work-area base class), `DeliveryChute`, `DeliveryButton`, `TestDeliveryBatch`, `SalvageBench`, `CleaningStation`, `AssemblyBench`, `ShippingChute`, `ShipmentCounter` |
-| `Scripts/Runtime/Workday/` | `WorkdayManager` (shift state, timer, quota, the single verdict, restart), `ShiftButton` (CLOCK IN), `TrapdoorSequence` (failure cutscene) |
+| `Scripts/Runtime/Workday/` | `WorkdayManager` (current day, shift state, timer, quota, delivery waves, the single verdict, next day and restart), `ChristmasCountdown` (the seven days' tuning), `DeliveryWave` (what one delivery contains, plus the standard Robots, Bears, Cars and Cyborg kit waves), `OrderBoard` (the WISH LIST board), `ShiftButton` (CLOCK IN), `TrapdoorSequence` (failure cutscene) |
 | `Scripts/Runtime/UI/` | `InteractionHud` (prompts, hints, status line, feedback), `WorkdayHud` (time, shipped versus quota, verdict panel and restart button) |
 | `Scripts/Runtime/Core/` | `GameLayers`, `WorkshopFeedback` |
-| `Scripts/Runtime/Net/` | `NetworkSession` (Host/Join/Leave, creates and destroys the network manager), `NetworkPlayer` (networked elf, carry requests to the host), `NetworkCarryable` (syncs owner state and loose pose), `NetworkRobot` (syncs dirty state and installed parts), `NetworkWorkshop` (shared shift, timer, count, station state and messages; Play Again for everyone) |
+| `Scripts/Runtime/Net/` | `NetworkSession` (Host/Join/Leave, creates and destroys the network manager), `NetworkPlayer` (networked elf, carry requests to the host), `NetworkCarryable` (syncs owner state and loose pose), `NetworkToy` (syncs dirty state and the part in each slot), `NetworkWorkshop` (shared shift, timer, count, station state and messages; Play Again for everyone) |
 | `Scripts/Editor/` | `WorkshopBuilder` (scene generation), `PlayFromWorkshop` |
 | `Tests/` | `RobotRulesTests`, `WorkshopLoopTests`, `WorkdayTests` (PlayMode) |
-| `Prefabs/` | `Elf Player` (solo), `Elf Player (Net)` (variant used online), `Network Manager` (instantiated when hosting or joining), `Workshop Sync` (spawned by the host), `Robot Body`, `Battery`, `Dead Battery`, `Winding Key`. The three `Placeholder *` prefabs are milestone 1 leftovers and unused |
+| `Prefabs/` | `Elf Player` (solo), `Elf Player (Net)` (variant used online), `Network Manager` (instantiated when hosting or joining), `Workshop Sync` (spawned by the host), toys `Robot Body`, `Teddy Bear`, `Toy Car`, parts `Battery`, `Dead Battery`, `Winding Key`, `Stuffing`, `Button Eyes`, `Wheel Set`. The three `Placeholder *` prefabs are milestone 1 leftovers and unused |
 | `Assets/DefaultNetworkPrefabs.asset` | Netcode's own list of networked prefabs; Netcode keeps it up to date, and the network manager uses only this list |
-| `Data/` | `Test Delivery Batch.asset` (delivery contents) |
+| `Data/` | `Christmas Countdown.asset` (the seven days: wish orders, shift length, delivery waves, Santa's notes). The old `Test Delivery Batch.asset` is deleted by the builder |
 | `Art/Materials/` | Flat-colour URP materials |
 | `Scenes/` | `Workshop.unity` (generated) |
 
 ### Ownership model
 
-A `Carryable` is in exactly one state at a time: `Loose` (a normal physics object, anywhere), `Held` (a player), `Installed` (a robot), `Reserved` (held still by a station operation, currently only the cleaning scrub) or `Consumed` (shipped or reset). Every transfer goes through one `Set*` method, which first notifies the previous owner (`ICarryableOwner.OnCarryableReleased`) so its reference is cleared. Destroying an object releases its owner the same way, and consuming a robot also consumes its installed parts. Stations never own loose items: each finds the robot resting in its work-area box every time it needs one, so a robot that is knocked or walks off a bench simply stops counting. The owner reference is a plain Unity-serializable field, so it survives a script recompile in Play mode. The state-changing methods (`PlayerInteractor.Request*`, `RobotBody.TryInstall`, `SalvageBench.TryRemovePart`, `AssemblyBench.TryInstallHeld`, `ShippingChute.TrySubmit`, `DeliveryChute.TryRequestDelivery` / `ResetTestBatch`) are the points a network host will validate in milestone 4.
+A `Carryable` is in exactly one state at a time: `Loose` (a normal physics object, anywhere), `Held` (a player), `Installed` (a toy), `Reserved` (held still by a station operation, currently only the cleaning scrub) or `Consumed` (shipped or reset). Every transfer goes through one `Set*` method, which first notifies the previous owner (`ICarryableOwner.OnCarryableReleased`) so its reference is cleared. Destroying an object releases its owner the same way, and consuming a toy also consumes its installed parts. Stations never own loose items: each finds the toy resting in its work-area box every time it needs one, so a toy that is knocked or walks off a bench simply stops counting. The owner reference is a plain Unity-serializable field, so it survives a script recompile in Play mode. The state-changing methods (`PlayerInteractor.Request*`, `ToyBody.TryInstall`, `WorkdayManager.TryMatchOrder`, `SalvageBench.TryRemovePart`, `AssemblyBench.TryInstallHeld`, `ShippingChute.TrySubmit`, `DeliveryChute.TryRequestDelivery` / `ResetTestBatch`) are the points a network host will validate in milestone 4.
 
 ### Replacing placeholder art
 
-Each toy prefab's root holds the rigidbody, a simple box collider and the gameplay components; its `Visual` child holds the art. Replace the `Visual` child freely. Keep the robot's `Battery Mount` and `Key Mount` objects (installed parts attach there, and their triggers are the aim targets), and point `RobotBody`'s **Dirt Visual** field at whatever object shows dirt.
+Each toy prefab's root holds the rigidbody, a simple box collider and the gameplay components; its `Visual` child holds the art. Replace the `Visual` child freely. Keep each toy's mount objects (such as `Battery Mount`, `Key Mount`, `Stuffing Mount`, `Front Wheels Mount`): installed parts attach there, their triggers are the aim targets, and `ToyBody`'s slot list points at them. Point `ToyBody`'s **Dirt Visual** field at whatever object shows dirt.
 
 ## Key ideas
 
@@ -277,25 +328,29 @@ Each toy prefab's root holds the rigidbody, a simple box collider and the gamepl
 - **Co-op changes ownership rules.** Keep pickup, assembly, shipping, and workday changes behind clear methods suitable for host authority. Netcode for GameObjects is the chosen package, with the host as the referee: a client sends requests and mirrors the results. Prove two-player behavior before expanding content.
 - **Everyone can do every job.** Fixed character classes are outside the first prototype. Players decide who sorts, cleans, assembles, and ships.
 
-## First toy: wind-up robot
+## Toys
 
-| Component | State | Shipping requirement |
+| Toy | Part slots | Finished version (what a plain order wants) |
 |---|---|---|
-| Robot body | Clean or dirty | Clean |
-| Battery | Working or dead | Working and installed |
-| Winding key | Present or missing | Installed |
+| Wind-up robot | Battery, Winding Key | Clean, working battery, winding key |
+| Teddy bear | Stuffing, Button Eyes, plus Battery and Winding Key on its back | Clean, stuffing, button eyes, **nothing else** |
+| Toy car | Battery, Front Wheels, Rear Wheels | Clean, working battery, a wheel set in both wheel slots |
 
-A dead battery may be installed for diagnosis and repair, but the robot cannot pass inspection until it is replaced. Installed parts must be visibly represented.
+| Special order | Built from | Needs |
+|---|---|---|
+| Cyborg bear | A teddy bear | Clean, stuffing, button eyes, working battery, winding key |
 
-### First stations
+Parts: battery (working or dead), winding key, stuffing, button eyes, wheel set. Parts fit any toy with a matching slot, which is how a bear becomes a cyborg bear. A dead battery can be installed for diagnosis, but it won't pass inspection. Installed parts sit visibly on their mounts and move with the toy. Outside a shift (practice), a toy only has to be its ordinary finished version to ship.
+
+### Stations
 
 | Station | Input | Action / output |
 |---|---|---|
-| Delivery chute | Request button (one batch at a time) and DEV reset button | Three robots and three loose parts dropped onto the delivery table's six spots; refused while the spots are cluttered |
-| Salvage bench | The robot resting in its work area | Aim at an installed part to remove it; it pops out loose at the first clear tray spot, or into the player's hands if all three are blocked |
+| Delivery chute | Request button (practice: the day's first wave, one batch at a time) and DEV reset button; during a shift the day's waves arrive on schedule | Toys and loose parts dropped onto the delivery table's six spots; a wave waits while the spots are cluttered |
+| Salvage bench | The toy resting in its work area | Aim at an installed part to remove it; it pops out loose at the first clear tray spot, or into the player's hands if all three are blocked |
 | Cleaning station | One dirty body | 3-second automatic scrub with progress bar; body locked until clean; clean bodies refused |
-| Assembly bench | The robot resting in its work area, then carried parts | Installs the carried part into its empty slot; status label shows what's missing |
-| Shipping chute | Carried robot | Accepts a valid robot once, or drops it loose into the reject bin with the reasons (stays in hand if all three drop spots are blocked) |
+| Assembly bench | The toy resting in its work area, then carried parts | Installs the carried part into the first empty slot that takes it (or the slot you aim at); the label lists every slot and says which finished toy it now is |
+| Shipping chute | Carried toy | During a shift, fills the matching wish order once; otherwise drops it loose into the reject bin with the reasons (stays in hand if all three drop spots are blocked) |
 
 ## How to add things
 
@@ -303,8 +358,9 @@ These are extension guidelines. Replace them with exact file references as syste
 
 | I want to add… | Approach |
 |---|---|
-| A new toy | Define its required components and conditions; reuse the existing station loop before adding special behavior |
-| A new component | Define compatible slots, visible representation, and any condition that affects validation |
+| A new toy | Add a `ToyType`, a recipe in `ToyRecipe`, a prefab with a `ToyBody` and one mount (with a `ToySlotTarget`) per slot, and register the prefab on the delivery chute (the builder shows how). The stations, shipping and co-op sync already work with any toy of up to 4 slots |
+| A new component | Add a `PartKind` (append only, values are saved in assets), its name in `ToyRecipe.PartName`, a part prefab with a `ToyPart`, and slots for it on the toys that take it |
+| A new special order | Add an `OrderKind` and its recipe in `ToyRecipe` (like the cyborg bear), then put it on some days' wish lists |
 | A station | Reuse interaction and ownership rules; specify accepted inputs, operation, and accessible output positions |
 | A replacement model | Replace the visual child or prefab while preserving gameplay references, attachment points, scale, and colliders |
 | A malfunction | Add a readable cause, visible feedback, and a recovery action after the basic loop is stable |
@@ -322,7 +378,7 @@ Keep relevant values editable rather than scattering unexplained constants throu
 | Interaction reach / carry distance | How players target and transport objects | `Elf Player` prefab → Player Interactor (reach); `Hold Point` child position |
 | Cleaning duration | Cleaning workload and station bottlenecks | Workshop scene → Cleaning Station → Work Area → Clean Duration (3 s) |
 | Delivery composition | Available bodies, usable components, and repair decisions | `Data/Test Delivery Batch.asset`. Deliveries are refused if it can't complete at least two robots, or has more items than the 6 delivery-table spots |
-| Shift length / quota | Production pressure and win conditions | Workshop scene → **Workday** object → Workday Manager → **Shift Length Seconds** (300) and **Quota** (2) |
+| Days, wish orders, shift length, delivery waves, Santa's notes | The week's difficulty curve | `Data/Christmas Countdown.asset` (one entry per day; the first is 7 days until Christmas). Each order is a kind (robot, bear, car, cyborg bear) and a kid's name; each wave lists its toys (with their installed parts) and loose parts. A day whose waves can't bring enough bodies and working parts for its orders is refused at clock-in. The builder keeps this asset (it only resets it if it predates wish orders) |
 | Santa's lines | Verdict titles and messages | Workday Manager → Santa section |
 | Trapdoor timing | How long the failure sequence takes before Retry | Workshop scene → Room → **Trapdoor** → Trapdoor Sequence (gather 0.7 s, open 0.5 s, fall 1.3 s) |
 | Time warning | When the timer turns red | HUD → Workday Hud → Warning Seconds (30) |
@@ -360,9 +416,12 @@ Run the checks relevant to the milestone being changed. Planned-system checks be
 - **Ownership:** spamming E at stations and the chute can't duplicate parts, install two parts in one slot, or add credit. DEV reset mid-cleaning and while carrying a part clears everything, leaves nothing stuck in your hands, and lets a fresh batch be requested.
 - **Clock in:** before clocking in, the top of the screen says PRACTICE and the timer doesn't move. Pressing E on CLOCK IN clears practice items and starts a 5:00 countdown with **Shipped 0 / 2**.
 - **During the shift:** REQUEST DELIVERY and DEV RESET show "Disabled during a scored shift". A rejected robot leaves the count unchanged.
-- **Win:** shipping the second valid robot shows Santa's message and **Play Again** at once. You can't move or interact, and the mouse is free to click the button.
-- **Timeout:** with the quota unmet when time runs out (set Shift Length Seconds to 30 on the Workday object to test quickly), you're pulled onto the trapdoor, the doors open over an orange glow, you fall, and *"You've been reassigned to furnace operations"* appears with **Retry**.
-- **Restart:** Play Again and Retry (click or R) each return to practice mode with the timer at 5:00, Shipped 0, an empty delivery table, idle stations, empty hands and the trapdoor closed.
+- **Toys:** on day 2, the bear wave arrives around 1:40. A bear takes stuffing in its belly and button eyes on its face. On day 3 the car wave arrives: wheel sets go into the front and rear wheel slots and the battery on the rear deck. The assembly bench label lists every slot and says READY: teddy bear / toy car when finished.
+- **Wish orders:** the WISH LIST board ticks off each order as it ships. On day 5, a plain bear is rejected with "battery is missing, winding key is missing (for …'s cyborg bear)". Fit a battery and key on its back, and it's accepted as a cyborg bear.
+- **Win a day:** filling every wish shows Santa's message, tomorrow's quota and **Next Day** at once. You can't move or interact, and the mouse is free to click the button. Next Day (click or R) puts you at the start of day 2 ("6 days until Christmas", quota 3) in practice mode, with an empty delivery table, idle stations, empty hands and Shipped 0, and the mouse captured again.
+- **Delivery waves:** on day 2, a second delivery arrives about 1:40 into the shift. If the first delivery's toys are still on the table, it waits until you clear room.
+- **Timeout:** with the quota unmet when time runs out (shorten **Shift Length Seconds** for day 1 in `Data/Christmas Countdown.asset` to test quickly), you're pulled onto the trapdoor, the doors open over an orange glow, you fall, and *"You've been reassigned to furnace operations… Back to 7 days until Christmas"* appears with **Back to Day 1**, which reloads at day 1.
+- **The whole week:** to check Christmas Eve without playing six days, temporarily set every day's quota to 1 in the countdown asset. Passing day 7 shows MERRY CHRISTMAS! and Play Again.
 - **Co-op part 1** (Multiplayer Play Mode, see [Co-op test](#co-op-test-two-players-on-one-pc)):
   - Host with F5 and join with F6; each window shows exactly one elf of its own plus the other player's elf.
   - Walking and looking up and down show on the other screen.
@@ -377,7 +436,7 @@ Run the checks relevant to the milestone being changed. Planned-system checks be
   - Player 2 ships a robot. A valid one raises the count on both screens; an invalid one lands in the reject bin with the reasons shown to both players.
   - Player 2 presses CLOCK IN; the timer and Shipped 0 / 2 appear on both screens. During the shift, REQUEST DELIVERY and DEV RESET refuse for both players.
   - Both players ship robots: the second accepted robot ends the shift once, and both see Santa's message. Play Again from Player 2 resets both into practice mode, still connected.
-  - With Shift Length Seconds set to 30 (host's Workday object), let time run out: both elves fall through the trapdoor, each sees the other fall, and Retry from either player resets both.
+  - With day 1's Shift Length Seconds set to 30 in the countdown asset, let time run out: both elves fall through the trapdoor, each sees the other fall, and Retry from either player resets both.
 
 ## Development workflow
 

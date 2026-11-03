@@ -3,7 +3,7 @@ using UnityEngine;
 namespace ElfAndSafety
 {
     /// <summary>
-    /// When a dirty robot comes to rest in the tub, the station holds it still and scrubs it, then lets go.
+    /// When a dirty toy comes to rest in the tub, the station holds it still and scrubs it, then lets go.
     /// The body is reserved by the operation, so it can't be taken mid-scrub.
     /// </summary>
     public class CleaningStation : WorkStation, ICarryableOwner, IReservingStation
@@ -13,10 +13,10 @@ namespace ElfAndSafety
         [SerializeField] Transform progressFill;
         [SerializeField] TextMesh statusLabel;
 
-        RobotBody cleaning;
+        ToyBody cleaning;
         float progress;
 
-        public RobotBody Cleaning => cleaning;
+        public ToyBody Cleaning => cleaning;
         public bool IsCleaning => cleaning != null || mirrorActive;
 
         // Co-op client: the host runs the scrub; these mirror its progress for the bar and label.
@@ -34,14 +34,14 @@ namespace ElfAndSafety
 
         protected override bool AcceptsPlacement(Carryable item, out string reason)
         {
-            var robot = item.GetComponent<RobotBody>();
-            if (robot == null)
+            var toy = item.GetComponent<ToyBody>();
+            if (toy == null)
             {
-                reason = "Only robot bodies can be scrubbed";
+                reason = "Only toys can be scrubbed";
                 return false;
             }
 
-            if (!robot.IsDirty)
+            if (!toy.IsDirty)
             {
                 reason = "Already clean. No scrubbing needed";
                 return false;
@@ -53,7 +53,7 @@ namespace ElfAndSafety
 
         void Update()
         {
-            // The host runs the scrub; a co-op client just sees the robot's clean state change.
+            // The host runs the scrub; a co-op client just sees the toy's clean state change.
             if (NetworkSession.IsRemoteClient)
             {
                 Refresh();
@@ -78,7 +78,7 @@ namespace ElfAndSafety
 
         void TryStartCleaning()
         {
-            RobotBody robot = FindRobot();
+            ToyBody robot = FindToy();
             if (robot == null || !robot.IsDirty || !robot.Carryable.IsResting)
             {
                 return;
@@ -92,7 +92,7 @@ namespace ElfAndSafety
 
         void FinishCleaning()
         {
-            RobotBody robot = cleaning;
+            ToyBody robot = cleaning;
             cleaning = null;
             robot.SetDirty(false);
             robot.Carryable.SetLoose(PlacePoint.position, PlacePoint.rotation, Vector3.zero);
@@ -111,7 +111,7 @@ namespace ElfAndSafety
 
         void Refresh()
         {
-            RobotBody robot = cleaning != null ? cleaning : FindRobot();
+            ToyBody robot = cleaning != null ? cleaning : FindToy();
 
             if (progressFill != null)
             {
@@ -121,7 +121,7 @@ namespace ElfAndSafety
 
             if (statusLabel != null)
             {
-                statusLabel.text = IsCleaning ? BusyMessage : robot != null && !robot.IsDirty ? "Clean! Take it" : "Drop a dirty robot in";
+                statusLabel.text = IsCleaning ? BusyMessage : robot != null && !robot.IsDirty ? "Clean! Take it" : "Drop a dirty toy in";
             }
         }
     }

@@ -3,7 +3,9 @@ using UnityEngine;
 namespace ElfAndSafety
 {
     /// <summary>
-    /// Carry a robot here and press Interact to submit it. Valid robots leave play and count once;
+    /// Carry a toy here and press Interact to submit it. During a shift it must exactly match an open wish
+    /// order, which it fills; in practice it only has to be its ordinary finished version. Accepted toys
+    /// leave play and count once;
     /// invalid ones drop loose into the reject bin at the first clear drop point, with the reason, or stay
     /// in the player's hands if the bin is full. Needs a trigger collider over the chute mouth.
     /// </summary>
@@ -16,7 +18,9 @@ namespace ElfAndSafety
         [SerializeField] float rejectClearance = 0.2f;
         [SerializeField] TextMesh statusLabel;
 
-        public string LastResult { get; private set; } = "Ship finished robots here";
+        const string IdleText = "Ship finished toys here";
+
+        public string LastResult { get; private set; } = IdleText;
         public Transform[] RejectDropPoints => rejectDropPoints;
 
         void Start()
@@ -31,6 +35,13 @@ namespace ElfAndSafety
         }
 
         void OnCountChanged(int shipped) => RefreshLabel();
+
+        /// <summary>A new day: forget yesterday's last result.</summary>
+        internal void ResetForNewDay()
+        {
+            LastResult = IdleText;
+            RefreshLabel();
+        }
 
         /// <summary>Co-op client: show the host's last inspection result.</summary>
         internal void MirrorLastResult(string result)
@@ -52,13 +63,13 @@ namespace ElfAndSafety
 
             if (player.Held == null)
             {
-                actionLabel = "Bring a finished robot to ship";
+                actionLabel = "Bring a finished toy to ship";
                 return false;
             }
 
-            if (player.Held.GetComponent<RobotBody>() == null)
+            if (player.Held.GetComponent<ToyBody>() == null)
             {
-                actionLabel = "Only whole robots can be shipped";
+                actionLabel = "Only whole toys can be shipped";
                 return false;
             }
 
@@ -68,34 +79,41 @@ namespace ElfAndSafety
 
         public void Interact(PlayerInteractor player) => TrySubmit(player);
 
-        /// <summary>Inspects the robot the player is carrying. Returns true only if it was accepted.</summary>
+        /// <summary>Inspects the toy the player is carrying. Returns true only if it was accepted.</summary>
         public bool TrySubmit(PlayerInteractor player)
         {
-            RobotBody robot = player.Held != null ? player.Held.GetComponent<RobotBody>() : null;
-            if (robot == null || robot.Carryable.State != CarryState.Held || !ShiftAllowsShipping)
+            ToyBody toy = player.Held != null ? player.Held.GetComponent<ToyBody>() : null;
+            if (toy == null || toy.Carryable.State != CarryState.Held || !ShiftAllowsShipping)
             {
                 return false;
             }
 
-            bool accepted = RobotInspection.IsShippable(robot, out string reason);
+            int orderIndex = -1;
+            string reason;
+            bool scored = workday != null && workday.State == ShiftState.Running;
+            bool accepted = scored ? workday.TryMatchOrder(toy, out orderIndex, out reason) : ToyInspection.IsShippable(toy, out reason);
             if (accepted)
             {
-                // Consume first so the same robot can never be counted twice.
-                robot.Carryable.Consume();
+                string what = orderIndex >= 0 ? workday.Orders[orderIndex].Describe() : toy.DisplayName;
+
+                // Consume first so the same toy can never be counted twice; fill the order before counting,
+                // so the shipment that completes the wish list ends the shift with every order filled.
+                toy.Carryable.Consume();
+                if (orderIndex >= 0) workday.FillOrder(orderIndex);
                 counter.RecordShipment();
-                LastResult = "ACCEPTED!";
-                WorkshopFeedback.Info($"Shipped! Santa is pleased. ({counter.Shipped} shipped)");
+                LastResult = $"ACCEPTED: {what}";
+                WorkshopFeedback.Info($"Shipped {what}! Santa is pleased. ({counter.Shipped} shipped)");
             }
             else
             {
-                Reject(robot, reason);
+                Reject(toy, reason);
             }
 
             RefreshLabel();
             return accepted;
         }
 
-        void Reject(RobotBody robot, string reason)
+        void Reject(ToyBody toy, string reason)
         {
             LastResult = $"REJECTED: {reason}";
 
@@ -105,7 +123,7 @@ namespace ElfAndSafety
                 if (point != null && !Physics.CheckSphere(point.position, rejectClearance, ~(1 << GameLayers.Player), QueryTriggerInteraction.Ignore))
                 {
                     // Dropped loose into the bin: it tumbles in like anything else.
-                    robot.Carryable.SetLoose(point.position, point.rotation, Vector3.zero);
+                    toy.Carryable.SetLoose(point.position, point.rotation, Vector3.zero);
                     WorkshopFeedback.Problem($"Rejected: {reason}. Dumped in the reject bin");
                     return;
                 }

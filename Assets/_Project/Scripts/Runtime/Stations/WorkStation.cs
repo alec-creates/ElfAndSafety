@@ -5,7 +5,7 @@ namespace ElfAndSafety
 {
     /// <summary>
     /// A station's work area: a trigger box over its work surface. Nothing is locked to the station; it works
-    /// on whichever loose robot is resting inside the box, however it got there. Aiming at the area while
+    /// on whichever loose toy is resting inside the box, however it got there. Aiming at the area while
     /// carrying something offers to set it down neatly at the place point (it stays a normal physics object).
     /// Put this on the object that has the trigger BoxCollider.
     /// </summary>
@@ -47,15 +47,15 @@ namespace ElfAndSafety
         }
 
         /// <summary>
-        /// The robot this station works on: the one in the area closest to the place point. Loose robots
-        /// count, plus any robot this station itself has reserved.
+        /// The toy this station works on: the one in the area closest to the place point. Loose toys
+        /// count, plus any toy this station itself has reserved.
         /// </summary>
-        public RobotBody FindRobot()
+        public ToyBody FindToy()
         {
-            RobotBody best = null;
+            ToyBody best = null;
             float bestDistance = float.MaxValue;
 
-            foreach (RobotBody robot in RobotBody.All)
+            foreach (ToyBody robot in ToyBody.All)
             {
                 Carryable item = robot.Carryable;
                 bool available = item.State == CarryState.Loose || (item.State == CarryState.Reserved && ReferenceEquals(item.Owner, this));
@@ -84,7 +84,7 @@ namespace ElfAndSafety
             Carryable held = player.Held;
             if (held == null)
             {
-                // Empty-handed: aim at the robot or parts on the station instead.
+                // Empty-handed: aim at the toy or parts on the station instead.
                 actionLabel = null;
                 return false;
             }
@@ -95,9 +95,9 @@ namespace ElfAndSafety
                 return false;
             }
 
-            if (held.GetComponent<RobotBody>() != null && FindRobot() != null)
+            if (held.GetComponent<ToyBody>() != null && FindToy() != null)
             {
-                actionLabel = $"{displayName} already has a robot";
+                actionLabel = $"{displayName} already has a toy";
                 return false;
             }
 

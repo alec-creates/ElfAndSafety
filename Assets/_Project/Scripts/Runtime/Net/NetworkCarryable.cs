@@ -7,7 +7,7 @@ namespace ElfAndSafety
     /// Syncs a <see cref="Carryable"/>'s owner state from the host, plus its pose while loose or reserved.
     /// On the host the Carryable runs normally and this only publishes it. On clients the Carryable is a
     /// kinematic mirror: held items follow their holder's hold point, installed parts are attached by
-    /// <see cref="NetworkRobot"/>, and loose items glide to the host's physics pose.
+    /// <see cref="NetworkToy"/>, and loose items glide to the host's physics pose.
     /// Netcode's own parenting and NetworkTransform are not used here: installed parts hang under mount
     /// points, which Netcode can't parent to, and solo play must keep working with no session at all.
     /// </summary>
@@ -122,7 +122,7 @@ namespace ElfAndSafety
                     if (item.State != CarryState.Reserved) item.SetReserved(null, position.Value, rotation.Value);
                     break;
 
-                // Installed: NetworkRobot attaches the part to its mount. Consumed: the host despawns it.
+                // Installed: NetworkToy attaches the part to its mount. Consumed: the host despawns it.
             }
         }
 

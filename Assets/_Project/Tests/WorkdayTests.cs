@@ -67,7 +67,7 @@ namespace ElfAndSafety.Tests
             Assert.AreEqual(0, counter.Shipped, "Practice shipments don't count");
             Assert.IsNull(player.Held, "Practice items are cleared, including the one in hand");
             Assert.AreEqual(3, Robots().Length, "One fresh batch for the shift");
-            Assert.AreEqual(2, chute.SpawnedItems.Select(i => i.GetComponent<RobotPart>()).Count(p => p != null && p.Carryable.State == CarryState.Loose && (p.IsWorking)), "Loose working battery and key");
+            Assert.AreEqual(2, chute.SpawnedItems.Select(i => i.GetComponent<ToyPart>()).Count(p => p != null && p.Carryable.State == CarryState.Loose && (p.IsWorking)), "Loose working battery and key");
             Assert.IsFalse(workday.StartShift(), "Can't clock in twice");
         }
 
@@ -107,7 +107,7 @@ namespace ElfAndSafety.Tests
         {
             Assert.IsTrue(workday.StartShift());
 
-            foreach (RobotBody robot in Robots())
+            foreach (ToyBody robot in Robots())
             {
                 Assert.IsTrue(player.RequestPickUp(robot.Carryable));
                 Assert.IsFalse(shipping.TrySubmit(player), "Every delivered robot starts invalid");
@@ -122,7 +122,7 @@ namespace ElfAndSafety.Tests
         public void ShippingTheQuota_WinsOnce_AndFreezesTheWorkshop()
         {
             Assert.IsTrue(workday.StartShift());
-            RobotBody[] robots = Robots();
+            ToyBody[] robots = Robots();
 
             Ship(MakeValid(robots[2]));
             Assert.AreEqual(ShiftState.Running, workday.State, "One of two isn't enough");
@@ -175,7 +175,7 @@ namespace ElfAndSafety.Tests
         public void DeadlineFrame_QuotaShipmentFirst_SucceedsOnce()
         {
             Assert.IsTrue(workday.StartShift());
-            RobotBody[] robots = Robots();
+            ToyBody[] robots = Robots();
             Ship(MakeValid(robots[2]));
             MakeValid(robots[0]);
             workday.SetRemainingSeconds(0f);
@@ -193,7 +193,7 @@ namespace ElfAndSafety.Tests
         public void DeadlineFrame_TimeoutFirst_RefusesTheLateShipment()
         {
             Assert.IsTrue(workday.StartShift());
-            RobotBody[] robots = Robots();
+            ToyBody[] robots = Robots();
             Ship(MakeValid(robots[2]));
             MakeValid(robots[0]);
             workday.SetRemainingSeconds(0.01f);
@@ -213,7 +213,7 @@ namespace ElfAndSafety.Tests
         public IEnumerator PlayAgain_AfterWin_ReturnsAFreshWorkshop()
         {
             Assert.IsTrue(workday.StartShift());
-            RobotBody[] robots = Robots();
+            ToyBody[] robots = Robots();
             Ship(MakeValid(robots[2]));
             Ship(MakeValid(robots[0]));
             Assert.AreEqual(ShiftState.Succeeded, workday.State);
@@ -265,7 +265,7 @@ namespace ElfAndSafety.Tests
             Assert.AreEqual(workday.ShiftLengthSeconds, workday.RemainingSeconds);
             Assert.AreEqual(0, counter.Shipped);
             Assert.IsFalse(workday.VerdictVisible);
-            Assert.AreEqual(0, Object.FindObjectsByType<RobotBody>().Length, "No delivery until clocking in or requesting one");
+            Assert.AreEqual(0, Object.FindObjectsByType<ToyBody>().Length, "No delivery until clocking in or requesting one");
             Assert.IsNull(player.Held);
             Assert.IsTrue(player.InteractionEnabled);
             Assert.IsTrue(Object.FindAnyObjectByType<CharacterController>().enabled);
@@ -273,17 +273,17 @@ namespace ElfAndSafety.Tests
             Assert.IsTrue(chute.CanRequestDelivery(out _), "Practice tools are back");
         }
 
-        RobotBody[] Robots() => chute.SpawnedItems.Select(i => i.GetComponent<RobotBody>()).Where(r => r != null).ToArray();
+        ToyBody[] Robots() => chute.SpawnedItems.Select(i => i.GetComponent<ToyBody>()).Where(r => r != null).ToArray();
 
-        RobotBody Robot(System.Func<RobotBody, bool> match) => Robots().First(match);
+        ToyBody Robot(System.Func<ToyBody, bool> match) => Robots().First(match);
 
-        RobotPart[] LooseParts(RobotPartKind kind) => chute.SpawnedItems
-            .Select(i => i.GetComponent<RobotPart>())
+        ToyPart[] LooseParts(PartKind kind) => chute.SpawnedItems
+            .Select(i => i.GetComponent<ToyPart>())
             .Where(p => p != null && p.Kind == kind && p.Carryable.State == CarryState.Loose)
             .ToArray();
 
         /// <summary>Cleans the robot and swaps in a loose working battery and key where needed.</summary>
-        RobotBody MakeValid(RobotBody robot)
+        ToyBody MakeValid(ToyBody robot)
         {
             robot.SetDirty(false);
 
@@ -293,18 +293,18 @@ namespace ElfAndSafety.Tests
             }
             if (robot.Battery == null)
             {
-                Assert.IsTrue(robot.TryInstall(LooseParts(RobotPartKind.Battery).First(p => p.IsWorking)));
+                Assert.IsTrue(robot.TryInstall(LooseParts(PartKind.Battery).First(p => p.IsWorking)));
             }
             if (robot.WindingKey == null)
             {
-                Assert.IsTrue(robot.TryInstall(LooseParts(RobotPartKind.WindingKey).First()));
+                Assert.IsTrue(robot.TryInstall(LooseParts(PartKind.WindingKey).First()));
             }
 
-            Assert.IsTrue(RobotInspection.IsShippable(robot, out string reason), reason);
+            Assert.IsTrue(ToyInspection.IsShippable(robot, out string reason), reason);
             return robot;
         }
 
-        void Ship(RobotBody robot)
+        void Ship(ToyBody robot)
         {
             player.RequestDrop();
             Assert.IsTrue(player.RequestPickUp(robot.Carryable));

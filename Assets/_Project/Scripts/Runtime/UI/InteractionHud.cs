@@ -60,7 +60,7 @@ namespace ElfAndSafety
 
             if (shippedLabel != null)
             {
-                shippedLabel.text = counter != null ? $"Robots shipped: {counter.Shipped}" : string.Empty;
+                shippedLabel.text = counter != null ? $"Toys shipped: {counter.Shipped}" : string.Empty;
             }
 
             if (feedbackLabel != null && Time.time > feedbackHideTime)

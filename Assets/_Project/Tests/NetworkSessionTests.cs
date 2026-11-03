@@ -74,10 +74,10 @@ namespace ElfAndSafety.Tests
             Assert.IsTrue(delivery.TryRequestDelivery());
             Assert.IsTrue(delivery.SpawnedItems.All(i => i.GetComponent<NetworkObject>().IsSpawned), "Every delivered item exists for clients");
 
-            RobotBody robot = delivery.SpawnedItems.Select(i => i.GetComponent<RobotBody>()).First(r => r != null && r.Battery != null && r.WindingKey != null);
+            ToyBody robot = delivery.SpawnedItems.Select(i => i.GetComponent<ToyBody>()).First(r => r != null && r.Battery != null && r.WindingKey != null);
             yield return null;
-            var syncedRobot = robot.GetComponent<NetworkRobot>();
-            Assert.IsTrue(syncedRobot.SyncedBattery.TryGet(out NetworkObject battery));
+            var syncedRobot = robot.GetComponent<NetworkToy>();
+            Assert.IsTrue(syncedRobot.SyncedSlot(0).TryGet(out NetworkObject battery));
             Assert.AreSame(robot.Battery.gameObject, battery.gameObject, "The synced slot points at the actual part");
             Assert.IsTrue(syncedRobot.SyncedDirty);
 
@@ -92,7 +92,7 @@ namespace ElfAndSafety.Tests
             Assert.AreEqual(CarryState.Loose, syncedCarry.SyncedState);
             Assert.AreEqual(ulong.MaxValue, syncedCarry.SyncedHolder);
 
-            Assert.IsTrue(robot.transform.Find("Battery Mount").GetComponentInChildren<RobotPart>() == robot.Battery, "Installed parts still hang on their mount");
+            Assert.IsTrue(robot.transform.Find("Battery Mount").GetComponentInChildren<ToyPart>() == robot.Battery, "Installed parts still hang on their mount");
         }
 
         [UnityTest]
@@ -112,17 +112,17 @@ namespace ElfAndSafety.Tests
             Assert.AreEqual(9, delivery.SpawnedItems.Count);
 
             // A part mount on a networked robot, named by the robot plus the path below it.
-            RobotBody robot = delivery.SpawnedItems.Select(i => i.GetComponent<RobotBody>()).First(r => r != null && r.Battery != null && r.WindingKey != null);
+            ToyBody robot = delivery.SpawnedItems.Select(i => i.GetComponent<ToyBody>()).First(r => r != null && r.Battery != null && r.WindingKey != null);
             var salvage = Object.FindAnyObjectByType<SalvageBench>();
             Assert.IsTrue(host.Interactor.RequestPickUp(robot.Carryable));
             Assert.IsTrue(NetworkPlayer.DescribeTarget(salvage, out NetworkObjectReference benchRef, out string benchPath));
             Assert.IsTrue(host.ApplyInteract(benchRef, benchPath), "Forwarded place on the salvage bench");
-            Assert.AreSame(robot, salvage.FindRobot());
+            Assert.AreSame(robot, salvage.FindToy());
 
-            var batteryMount = robot.GetComponentsInChildren<RobotSlotTarget>().First(t => t.Slot == RobotPartKind.Battery);
+            var batteryMount = robot.GetComponentsInChildren<ToySlotTarget>().First(t => t.Slot == PartKind.Battery);
             Assert.IsTrue(NetworkPlayer.DescribeTarget(batteryMount, out NetworkObjectReference mountRef, out string mountPath));
             Assert.AreEqual("Battery Mount", mountPath);
-            RobotPart battery = robot.Battery;
+            ToyPart battery = robot.Battery;
             Assert.IsTrue(host.ApplyInteract(mountRef, mountPath), "Forwarded salvage removes the part");
             Assert.IsNull(robot.Battery);
             Assert.AreEqual(CarryState.Loose, battery.Carryable.State);
@@ -144,8 +144,8 @@ namespace ElfAndSafety.Tests
             yield return null;
             Assert.AreEqual(ShiftState.Running, NetworkWorkshop.Instance.SyncedShiftState, "Shift state is shared");
 
-            RobotBody[] robots = delivery.SpawnedItems.Select(i => i.GetComponent<RobotBody>()).Where(r => r != null).ToArray();
-            foreach (RobotBody robot in new[] { robots[2], robots[0] })
+            ToyBody[] robots = delivery.SpawnedItems.Select(i => i.GetComponent<ToyBody>()).Where(r => r != null).ToArray();
+            foreach (ToyBody robot in new[] { robots[2], robots[0] })
             {
                 MakeValid(robot, delivery);
                 Assert.IsTrue(host.RequestPickUp(robot.Carryable));
@@ -167,24 +167,46 @@ namespace ElfAndSafety.Tests
             Assert.AreEqual(0, Object.FindAnyObjectByType<ShipmentCounter>().Shipped);
             Assert.AreEqual(workday.ShiftLengthSeconds, workday.RemainingSeconds);
             Assert.IsFalse(workday.VerdictVisible);
-            Assert.AreEqual(0, Object.FindObjectsByType<RobotBody>().Length, "Every toy despawned");
+            Assert.AreEqual(0, Object.FindObjectsByType<ToyBody>().Length, "Every toy despawned");
             Assert.IsTrue(host.InteractionEnabled, "The host's elf is unfrozen");
             Assert.AreEqual(ShiftState.NotStarted, NetworkWorkshop.Instance.SyncedShiftState);
             Assert.IsTrue(workday.StartShift(), "A second shift can start");
         }
 
-        static void MakeValid(RobotBody robot, DeliveryChute delivery)
+        [UnityTest]
+        public IEnumerator Host_NextDay_StartsInPlace_AndIsShared()
         {
-            RobotPart[] loose = delivery.SpawnedItems.Select(i => i.GetComponent<RobotPart>())
+            Assert.IsTrue(session.StartHost());
+            yield return WaitFor(() => NetworkWorkshop.Instance != null && NetworkPlayer.Find(NetworkManager.ServerClientId) != null);
+            var workday = Object.FindAnyObjectByType<WorkdayManager>();
+            var counter = Object.FindAnyObjectByType<ShipmentCounter>();
+
+            Assert.IsTrue(workday.StartShift());
+            for (int shipped = 0; shipped < workday.Quota; shipped++) counter.RecordShipment();
+            Assert.AreEqual(ShiftState.Succeeded, workday.State);
+
+            workday.Continue();
+            yield return WaitFor(() => workday.State == ShiftState.NotStarted);
+            yield return null;
+
+            Assert.IsTrue(NetworkSession.IsServer, "Still hosting");
+            Assert.AreEqual(2, workday.DayNumber);
+            Assert.AreEqual(1, NetworkWorkshop.Instance.SyncedDayIndex, "The day is shared");
+            Assert.IsTrue(NetworkPlayer.Find(NetworkManager.ServerClientId).Interactor.InteractionEnabled);
+        }
+
+        static void MakeValid(ToyBody robot, DeliveryChute delivery)
+        {
+            ToyPart[] loose = delivery.SpawnedItems.Select(i => i.GetComponent<ToyPart>())
                 .Where(p => p != null && p.Carryable.State == CarryState.Loose).ToArray();
             robot.SetDirty(false);
             if (robot.Battery != null && !robot.Battery.IsWorking)
             {
                 robot.Battery.Carryable.SetLoose(robot.transform.position + Vector3.right, Quaternion.identity, Vector3.zero);
             }
-            if (robot.Battery == null) Assert.IsTrue(robot.TryInstall(loose.First(p => p.Kind == RobotPartKind.Battery && p.IsWorking)));
-            if (robot.WindingKey == null) Assert.IsTrue(robot.TryInstall(loose.First(p => p.Kind == RobotPartKind.WindingKey)));
-            Assert.IsTrue(RobotInspection.IsShippable(robot, out string reason), reason);
+            if (robot.Battery == null) Assert.IsTrue(robot.TryInstall(loose.First(p => p.Kind == PartKind.Battery && p.IsWorking)));
+            if (robot.WindingKey == null) Assert.IsTrue(robot.TryInstall(loose.First(p => p.Kind == PartKind.WindingKey)));
+            Assert.IsTrue(ToyInspection.IsShippable(robot, out string reason), reason);
         }
 
         [UnityTest]

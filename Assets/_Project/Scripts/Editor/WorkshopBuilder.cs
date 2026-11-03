@@ -29,7 +29,9 @@ namespace ElfAndSafety.EditorTools
         const string MaterialFolder = Root + "/Art/Materials";
         const string PrefabFolder = Root + "/Prefabs";
         const string DataFolder = Root + "/Data";
-        const string BatchPath = DataFolder + "/Test Delivery Batch.asset";
+        // Milestone 2-5 delivery asset, replaced by the waves in the countdown; deleted if found.
+        const string LegacyBatchPath = DataFolder + "/Test Delivery Batch.asset";
+        const string CountdownPath = DataFolder + "/Christmas Countdown.asset";
         // Netcode keeps this list up to date with every prefab that has a NetworkObject.
         const string NetworkPrefabsPath = "Assets/DefaultNetworkPrefabs.asset";
         const string BackupFolder = "SceneBackups";
@@ -42,11 +44,14 @@ namespace ElfAndSafety.EditorTools
 
         struct ToyPrefabs
         {
-            public RobotBody Robot;
-            public RobotPart Battery;
-            public RobotPart DeadBattery;
-            public RobotPart WindingKey;
+            public ToyBody[] Toys;
+            public ToyPart[] Parts;
+
+            public IEnumerable<GameObject> All => Toys.Select(t => t.gameObject).Concat(Parts.Select(p => p.gameObject));
         }
+
+        static readonly string[] ToyPrefabNames = { "Robot Body", "Teddy Bear", "Toy Car" };
+        static readonly string[] PartPrefabNames = { "Battery", "Dead Battery", "Winding Key", "Stuffing", "Button Eyes", "Wheel Set" };
 
         [MenuItem("Elf & Safety/Build Workshop Scene")]
         public static void BuildFromMenu()
@@ -97,16 +102,17 @@ namespace ElfAndSafety.EditorTools
             BackUpExistingScene();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            ToyPrefabs toys = BuildToyPrefabs();
+            BuildToyPrefabs();
+            UpgradeLegacyRobotPrefab();
             AddNetworkComponentsToToys();
-            toys = BuildToyPrefabs();
-            TestDeliveryBatch batch = LoadOrCreateBatch();
+            ToyPrefabs toys = BuildToyPrefabs();
+            DeleteLegacyBatchAsset();
 
             BuildLighting();
             TrapdoorSequence trapdoor = BuildRoom();
             var counter = new GameObject("Shipment Counter").AddComponent<ShipmentCounter>();
             var workday = new GameObject("Workday").AddComponent<WorkdayManager>();
-            DeliveryChute delivery = BuildStations(toys, batch, counter, workday);
+            DeliveryChute delivery = BuildStations(toys, counter, workday);
             BuildTimeClock(workday);
             var player = BuildPlayer();
             InteractionHud hud = BuildHud(player.GetComponent<PlayerInteractor>(), workday);
@@ -120,6 +126,8 @@ namespace ElfAndSafety.EditorTools
             Assign(workday, "counter", counter);
             Assign(workday, "delivery", delivery);
             Assign(workday, "trapdoor", trapdoor);
+            Assign(workday, "shipping", Object.FindAnyObjectByType<ShippingChute>());
+            Assign(workday, "countdown", LoadOrCreateCountdown());
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             AddSceneToBuildSettings(ScenePath);
@@ -307,7 +315,7 @@ namespace ElfAndSafety.EditorTools
 
         // ---------------------------------------------------------------- Stations
 
-        static DeliveryChute BuildStations(ToyPrefabs toys, TestDeliveryBatch batch, ShipmentCounter counter, WorkdayManager workday)
+        static DeliveryChute BuildStations(ToyPrefabs toys, ShipmentCounter counter, WorkdayManager workday)
         {
             var stations = new GameObject("Stations").transform;
             var metal = Mat("Metal Grey", new Color(0.5f, 0.52f, 0.55f));
@@ -351,11 +359,8 @@ namespace ElfAndSafety.EditorTools
             Label(chute, "DELIVERIES", new Vector3(0f, 2.2f, -0.2f), Quaternion.identity, 0.06f, Color.white);
             var deliveryStatus = Label(chute, "", new Vector3(0f, 1.85f, -0.2f), Quaternion.identity, 0.04f, Color.white);
 
-            Assign(delivery, "batch", batch);
-            Assign(delivery, "robotPrefab", toys.Robot);
-            Assign(delivery, "batteryPrefab", toys.Battery);
-            Assign(delivery, "deadBatteryPrefab", toys.DeadBattery);
-            Assign(delivery, "windingKeyPrefab", toys.WindingKey);
+            AssignArray(delivery, "toyPrefabs", toys.Toys);
+            AssignArray(delivery, "partPrefabs", toys.Parts);
             AssignArray(delivery, "spawnPoints", spawnPoints);
             Assign(delivery, "statusLabel", deliveryStatus);
             Assign(delivery, "workday", workday);
@@ -437,6 +442,17 @@ namespace ElfAndSafety.EditorTools
             mouthTrigger.size = new Vector3(1.4f, 0.8f, 0.9f);
             var shippingChute = mouth.AddComponent<ShippingChute>();
             Label(shipping, "SHIPPING", new Vector3(0f, 2.95f, -0.2f), Quaternion.identity, 0.06f, Color.white);
+
+            var board = new GameObject("Wish List Board").transform;
+            board.SetParent(stations, false);
+            board.SetPositionAndRotation(new Vector3(7.9f, 1.95f, -0.25f), east);
+            Block("Backing", board, new Vector3(0f, 0f, 0.04f), new Vector3(1.9f, 1.5f, 0.04f), Mat("Board Green", new Color(0.1f, 0.3f, 0.18f)));
+            Block("Frame Top", board, new Vector3(0f, 0.77f, 0.03f), new Vector3(1.96f, 0.06f, 0.06f), red);
+            var boardText = Label(board, "", new Vector3(0f, 0.68f, 0f), Quaternion.identity, 0.035f, Color.white);
+            boardText.anchor = TextAnchor.UpperCenter;
+            var orderBoard = board.gameObject.AddComponent<OrderBoard>();
+            Assign(orderBoard, "workday", workday);
+            Assign(orderBoard, "label", boardText);
             Assign(shippingChute, "counter", counter);
             Assign(shippingChute, "workday", workday);
             AssignArray(shippingChute, "rejectDropPoints", rejectPoints);
@@ -627,8 +643,11 @@ namespace ElfAndSafety.EditorTools
         /// </summary>
         static void AddNetworkComponentsToToys()
         {
-            EnsurePrefabComponents($"{PrefabFolder}/Robot Body.prefab", disableParentSync: true, typeof(NetworkCarryable), typeof(NetworkRobot));
-            foreach (string part in new[] { "Battery", "Dead Battery", "Winding Key" })
+            foreach (string toy in ToyPrefabNames)
+            {
+                EnsurePrefabComponents($"{PrefabFolder}/{toy}.prefab", disableParentSync: true, typeof(NetworkCarryable), typeof(NetworkToy));
+            }
+            foreach (string part in PartPrefabNames)
             {
                 EnsurePrefabComponents($"{PrefabFolder}/{part}.prefab", disableParentSync: true, typeof(NetworkCarryable));
             }
@@ -725,7 +744,7 @@ namespace ElfAndSafety.EditorTools
             }
 
             // Usually Netcode has already filled this in; make sure, in case its import step hasn't run yet.
-            foreach (GameObject prefab in new[] { netPlayer, workshopSync, toys.Robot.gameObject, toys.Battery.gameObject, toys.DeadBattery.gameObject, toys.WindingKey.gameObject })
+            foreach (GameObject prefab in new[] { netPlayer, workshopSync }.Concat(toys.All))
             {
                 if (!list.PrefabList.Any(entry => entry.Prefab == prefab))
                 {
@@ -787,12 +806,23 @@ namespace ElfAndSafety.EditorTools
 
         static ToyPrefabs BuildToyPrefabs()
         {
+            var builders = new Dictionary<string, Func<GameObject>>
+            {
+                ["Robot Body"] = BuildRobotBody,
+                ["Teddy Bear"] = BuildTeddyBear,
+                ["Toy Car"] = BuildToyCar,
+                ["Battery"] = () => BuildBattery("Battery", true),
+                ["Dead Battery"] = () => BuildBattery("Dead Battery", false),
+                ["Winding Key"] = BuildWindingKey,
+                ["Stuffing"] = BuildStuffing,
+                ["Button Eyes"] = BuildButtonEyes,
+                ["Wheel Set"] = BuildWheelSet,
+            };
+
             return new ToyPrefabs
             {
-                Robot = ToyPrefab("Robot Body", BuildRobotBody).GetComponent<RobotBody>(),
-                Battery = ToyPrefab("Battery", () => BuildBattery("Battery", true)).GetComponent<RobotPart>(),
-                DeadBattery = ToyPrefab("Dead Battery", () => BuildBattery("Dead Battery", false)).GetComponent<RobotPart>(),
-                WindingKey = ToyPrefab("Winding Key", BuildWindingKey).GetComponent<RobotPart>(),
+                Toys = ToyPrefabNames.Select(name => ToyPrefab(name, builders[name]).GetComponent<ToyBody>()).ToArray(),
+                Parts = PartPrefabNames.Select(name => ToyPrefab(name, builders[name]).GetComponent<ToyPart>()).ToArray(),
             };
         }
 
@@ -815,6 +845,76 @@ namespace ElfAndSafety.EditorTools
         }
 
         /// <summary>
+        /// The milestone 2 robot prefab stored its battery and key mounts in fields that became the general slot
+        /// list. Fill the slots in from the mounts it already has, keeping its art.
+        /// </summary>
+        static void UpgradeLegacyRobotPrefab()
+        {
+            string path = $"{PrefabFolder}/Robot Body.prefab";
+            GameObject root = PrefabUtility.LoadPrefabContents(path);
+            var toy = root.GetComponent<ToyBody>();
+            Transform batteryMount = root.transform.Find("Battery Mount");
+            Transform keyMount = root.transform.Find("Key Mount");
+
+            if (toy != null && toy.SlotCount == 0 && batteryMount != null && keyMount != null)
+            {
+                ConfigureSlots(toy, ToyType.WindUpRobot, null, ("Battery", PartKind.Battery, batteryMount), ("Winding Key", PartKind.WindingKey, keyMount));
+                PrefabUtility.SaveAsPrefabAsset(root, path);
+                Debug.Log("Elf & Safety: upgraded Robot Body.prefab to the general toy slots");
+            }
+
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+
+        /// <summary>Sets a toy's type and slots, and points each mount's aim target at its slot.</summary>
+        static void ConfigureSlots(ToyBody toy, ToyType type, GameObject dirtVisual, params (string name, PartKind kind, Transform mount)[] slots)
+        {
+            var so = new SerializedObject(toy);
+            FindProperty(so, "type").intValue = (int)type;
+            if (dirtVisual != null) FindProperty(so, "dirtVisual").objectReferenceValue = dirtVisual;
+
+            SerializedProperty list = FindProperty(so, "slots");
+            list.arraySize = slots.Length;
+            for (int i = 0; i < slots.Length; i++)
+            {
+                SerializedProperty slot = list.GetArrayElementAtIndex(i);
+                slot.FindPropertyRelative("name").stringValue = slots[i].name;
+                slot.FindPropertyRelative("accepts").intValue = (int)slots[i].kind;
+                slot.FindPropertyRelative("mount").objectReferenceValue = slots[i].mount;
+            }
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            for (int i = 0; i < slots.Length; i++)
+            {
+                var target = slots[i].mount.GetComponent<ToySlotTarget>();
+                if (target == null) target = slots[i].mount.gameObject.AddComponent<ToySlotTarget>();
+                AssignEnum(target, "slotIndex", i);
+            }
+        }
+
+        static void DeleteLegacyBatchAsset()
+        {
+            if (File.Exists(LegacyBatchPath))
+            {
+                AssetDatabase.DeleteAsset(LegacyBatchPath);
+                Debug.Log($"Elf & Safety: removed {LegacyBatchPath}; deliveries now come from the Christmas Countdown waves");
+            }
+        }
+
+        static GameObject Dirt(Transform visual, params (Vector3 position, Vector3 size)[] smudges)
+        {
+            var dirt = new GameObject("Dirt").transform;
+            dirt.SetParent(visual, false);
+            var grime = Mat("Grime Brown", new Color(0.33f, 0.24f, 0.12f));
+            int i = 0;
+            foreach (var smudge in smudges)
+            {
+                Block($"Smudge {++i}", dirt, smudge.position, smudge.size, grime);
+            }
+            return dirt.gameObject;
+        }
+
+        /// <summary>
         /// Robot body facing +Z with its pivot at the feet. Battery mounts on the chest, key on the right side.
         /// Mount objects carry the aim triggers; installed parts are parented to them.
         /// </summary>
@@ -833,39 +933,100 @@ namespace ElfAndSafety.EditorTools
             Block("Leg Right", visual, new Vector3(0.09f, 0.07f, 0f), new Vector3(0.1f, 0.14f, 0.14f), dark);
             Block("Battery Hatch", visual, new Vector3(0f, 0.31f, 0.141f), new Vector3(0.16f, 0.22f, 0.02f), dark);
             Block("Key Hole", visual, new Vector3(0.181f, 0.36f, 0f), new Vector3(0.02f, 0.07f, 0.07f), dark);
+            GameObject dirt = Dirt(visual,
+                (new Vector3(-0.12f, 0.38f, 0.145f), new Vector3(0.1f, 0.12f, 0.02f)),
+                (new Vector3(0.12f, 0.2f, 0.145f), new Vector3(0.09f, 0.08f, 0.02f)),
+                (new Vector3(-0.185f, 0.3f, 0.03f), new Vector3(0.02f, 0.14f, 0.16f)),
+                (new Vector3(0.03f, 0.625f, 0f), new Vector3(0.14f, 0.03f, 0.14f)));
 
-            var dirt = new GameObject("Dirt").transform;
-            dirt.SetParent(visual, false);
-            var grime = Mat("Grime Brown", new Color(0.33f, 0.24f, 0.12f));
-            Block("Smudge Chest", dirt, new Vector3(-0.12f, 0.38f, 0.145f), new Vector3(0.1f, 0.12f, 0.02f), grime, eulerAngles: new Vector3(0f, 0f, 20f));
-            Block("Smudge Belly", dirt, new Vector3(0.12f, 0.2f, 0.145f), new Vector3(0.09f, 0.08f, 0.02f), grime);
-            Block("Smudge Side", dirt, new Vector3(-0.185f, 0.3f, 0.03f), new Vector3(0.02f, 0.14f, 0.16f), grime);
-            Block("Smudge Head", dirt, new Vector3(0.03f, 0.625f, 0f), new Vector3(0.14f, 0.03f, 0.14f), grime);
-            Block("Smudge Face", dirt, new Vector3(0.07f, 0.5f, 0.115f), new Vector3(0.08f, 0.05f, 0.02f), grime);
+            var batteryMount = Mount(root.transform, "Battery Mount", new Vector3(0f, 0.2f, 0.2f), Quaternion.identity, new Vector3(0.18f, 0.26f, 0.14f));
+            var keyMount = Mount(root.transform, "Key Mount", new Vector3(0.19f, 0.36f, 0f), Quaternion.Euler(0f, 0f, -90f), new Vector3(0.12f, 0.26f, 0.24f));
 
-            var batteryMount = Mount(root.transform, "Battery Mount", new Vector3(0f, 0.2f, 0.2f), Quaternion.identity, new Vector3(0.18f, 0.26f, 0.14f), RobotPartKind.Battery);
-            var keyMount = Mount(root.transform, "Key Mount", new Vector3(0.19f, 0.36f, 0f), Quaternion.Euler(0f, 0f, -90f), new Vector3(0.12f, 0.26f, 0.24f), RobotPartKind.WindingKey);
-
-            var robot = root.AddComponent<RobotBody>();
-            AssignBool(robot, "isDirty", true);
-            Assign(robot, "batteryMount", batteryMount);
-            Assign(robot, "keyMount", keyMount);
-            Assign(robot, "dirtVisual", dirt.gameObject);
+            var toy = root.AddComponent<ToyBody>();
+            AssignBool(toy, "isDirty", true);
+            ConfigureSlots(toy, ToyType.WindUpRobot, dirt, ("Battery", PartKind.Battery, batteryMount), ("Winding Key", PartKind.WindingKey, keyMount));
             return root;
         }
 
-        static Transform Mount(Transform robot, string name, Vector3 position, Quaternion rotation, Vector3 triggerSize, RobotPartKind slot)
+        /// <summary>
+        /// Teddy bear facing +Z, pivot at the feet. Stuffing goes in the belly seam, button eyes on the face.
+        /// The battery and key slots on its back are only filled for a cyborg bear.
+        /// </summary>
+        static GameObject BuildTeddyBear()
+        {
+            var root = CarryableRoot("Teddy Bear", 0.8f, new Vector3(0.4f, 0.64f, 0.34f), new Vector3(0f, -0.3f, 0f));
+            var visual = root.transform.Find("Visual");
+            var fur = Mat("Bear Fur Brown", new Color(0.62f, 0.4f, 0.22f));
+            var muzzle = Mat("Bear Muzzle Tan", new Color(0.88f, 0.72f, 0.52f));
+            var dark = Mat("Metal Dark", Color.black);
+            Block("Body", visual, new Vector3(0f, 0.24f, 0f), new Vector3(0.36f, 0.4f, 0.3f), fur, PrimitiveType.Sphere);
+            Block("Head", visual, new Vector3(0f, 0.5f, 0f), new Vector3(0.28f, 0.26f, 0.26f), fur, PrimitiveType.Sphere);
+            Block("Ear Left", visual, new Vector3(-0.11f, 0.62f, 0f), Vector3.one * 0.09f, fur, PrimitiveType.Sphere);
+            Block("Ear Right", visual, new Vector3(0.11f, 0.62f, 0f), Vector3.one * 0.09f, fur, PrimitiveType.Sphere);
+            Block("Muzzle", visual, new Vector3(0f, 0.46f, 0.12f), new Vector3(0.12f, 0.09f, 0.06f), muzzle, PrimitiveType.Sphere);
+            Block("Nose", visual, new Vector3(0f, 0.48f, 0.15f), Vector3.one * 0.04f, dark, PrimitiveType.Sphere);
+            Block("Arm Left", visual, new Vector3(-0.2f, 0.28f, 0.04f), new Vector3(0.1f, 0.18f, 0.1f), fur, PrimitiveType.Sphere);
+            Block("Arm Right", visual, new Vector3(0.2f, 0.28f, 0.04f), new Vector3(0.1f, 0.18f, 0.1f), fur, PrimitiveType.Sphere);
+            Block("Leg Left", visual, new Vector3(-0.1f, 0.06f, 0.06f), new Vector3(0.12f, 0.12f, 0.14f), fur, PrimitiveType.Sphere);
+            Block("Leg Right", visual, new Vector3(0.1f, 0.06f, 0.06f), new Vector3(0.12f, 0.12f, 0.14f), fur, PrimitiveType.Sphere);
+            Block("Belly Seam", visual, new Vector3(0f, 0.22f, 0.15f), new Vector3(0.12f, 0.14f, 0.01f), dark);
+            GameObject dirt = Dirt(visual,
+                (new Vector3(-0.1f, 0.3f, 0.14f), new Vector3(0.1f, 0.1f, 0.02f)),
+                (new Vector3(0.09f, 0.14f, 0.13f), new Vector3(0.09f, 0.07f, 0.02f)),
+                (new Vector3(0.06f, 0.56f, 0.1f), new Vector3(0.08f, 0.05f, 0.02f)));
+
+            var stuffing = Mount(root.transform, "Stuffing Mount", new Vector3(0f, 0.16f, 0.16f), Quaternion.identity, new Vector3(0.18f, 0.18f, 0.12f));
+            var eyes = Mount(root.transform, "Eyes Mount", new Vector3(0f, 0.5f, 0.13f), Quaternion.identity, new Vector3(0.2f, 0.1f, 0.08f));
+            var battery = Mount(root.transform, "Battery Mount", new Vector3(0f, 0.2f, -0.17f), Quaternion.Euler(0f, 180f, 0f), new Vector3(0.18f, 0.26f, 0.14f));
+            var key = Mount(root.transform, "Key Mount", new Vector3(0.2f, 0.34f, -0.06f), Quaternion.Euler(0f, 0f, -90f), new Vector3(0.12f, 0.26f, 0.24f));
+
+            var toy = root.AddComponent<ToyBody>();
+            AssignBool(toy, "isDirty", true);
+            ConfigureSlots(toy, ToyType.TeddyBear, dirt,
+                ("Stuffing", PartKind.Stuffing, stuffing), ("Button Eyes", PartKind.ButtonEyes, eyes),
+                ("Battery", PartKind.Battery, battery), ("Winding Key", PartKind.WindingKey, key));
+            return root;
+        }
+
+        /// <summary>Toy car facing +Z, pivot at the bottom: a battery on the rear deck and two wheel sets.</summary>
+        static GameObject BuildToyCar()
+        {
+            var root = CarryableRoot("Toy Car", 1f, new Vector3(0.34f, 0.3f, 0.54f), new Vector3(0f, -0.15f, 0f));
+            var visual = root.transform.Find("Visual");
+            var paint = Mat("Car Paint Blue", new Color(0.2f, 0.45f, 0.9f));
+            var glass = Mat("Car Window", new Color(0.7f, 0.9f, 1f));
+            Block("Chassis", visual, new Vector3(0f, 0.12f, 0f), new Vector3(0.3f, 0.12f, 0.5f), paint);
+            Block("Cabin", visual, new Vector3(0f, 0.22f, -0.03f), new Vector3(0.26f, 0.1f, 0.26f), paint);
+            Block("Windshield", visual, new Vector3(0f, 0.22f, 0.105f), new Vector3(0.24f, 0.08f, 0.01f), glass);
+            Block("Headlight Left", visual, new Vector3(-0.09f, 0.13f, 0.25f), Vector3.one * 0.04f, Mat("Bulb", Color.yellow), PrimitiveType.Sphere);
+            Block("Headlight Right", visual, new Vector3(0.09f, 0.13f, 0.25f), Vector3.one * 0.04f, Mat("Bulb", Color.yellow), PrimitiveType.Sphere);
+            GameObject dirt = Dirt(visual,
+                (new Vector3(-0.151f, 0.12f, 0.08f), new Vector3(0.01f, 0.08f, 0.14f)),
+                (new Vector3(0.151f, 0.14f, -0.1f), new Vector3(0.01f, 0.06f, 0.12f)),
+                (new Vector3(0.05f, 0.271f, -0.05f), new Vector3(0.1f, 0.01f, 0.1f)));
+
+            var battery = Mount(root.transform, "Battery Mount", new Vector3(0f, 0.18f, -0.2f), Quaternion.identity, new Vector3(0.18f, 0.26f, 0.14f));
+            var front = Mount(root.transform, "Front Wheels Mount", new Vector3(0f, 0f, 0.16f), Quaternion.identity, new Vector3(0.42f, 0.12f, 0.14f));
+            var rear = Mount(root.transform, "Rear Wheels Mount", new Vector3(0f, 0f, -0.16f), Quaternion.identity, new Vector3(0.42f, 0.12f, 0.14f));
+
+            var toy = root.AddComponent<ToyBody>();
+            AssignBool(toy, "isDirty", true);
+            ConfigureSlots(toy, ToyType.ToyCar, dirt,
+                ("Battery", PartKind.Battery, battery), ("Front Wheels", PartKind.WheelSet, front), ("Rear Wheels", PartKind.WheelSet, rear));
+            return root;
+        }
+
+        static Transform Mount(Transform toy, string name, Vector3 position, Quaternion rotation, Vector3 triggerSize)
         {
             var mount = new GameObject(name).transform;
-            mount.SetParent(robot, false);
+            mount.SetParent(toy, false);
             mount.localPosition = position;
             mount.localRotation = rotation;
             var trigger = mount.gameObject.AddComponent<BoxCollider>();
             trigger.isTrigger = true;
             trigger.size = triggerSize;
             trigger.center = new Vector3(0f, triggerSize.y * 0.5f - 0.02f, 0f);
-            var target = mount.gameObject.AddComponent<RobotSlotTarget>();
-            AssignEnum(target, "slot", (int)slot);
+            mount.gameObject.AddComponent<ToySlotTarget>();
             return mount;
         }
 
@@ -878,11 +1039,7 @@ namespace ElfAndSafety.EditorTools
             Block("Cell", visual, new Vector3(0f, 0.09f, 0f), new Vector3(0.12f, 0.09f, 0.12f), cell, PrimitiveType.Cylinder);
             Block("Band", visual, new Vector3(0f, 0.12f, 0f), new Vector3(0.126f, 0.02f, 0.126f), band, PrimitiveType.Cylinder);
             Block("Terminal", visual, new Vector3(0f, 0.19f, 0f), new Vector3(0.05f, 0.015f, 0.05f), working ? Mat("Copper", new Color(0.75f, 0.45f, 0.2f)) : Mat("Metal Dark", Color.black), PrimitiveType.Cylinder);
-
-            var part = root.AddComponent<RobotPart>();
-            AssignEnum(part, "kind", (int)RobotPartKind.Battery);
-            AssignBool(part, "isWorking", working);
-            return root;
+            return Part(root, PartKind.Battery, working);
         }
 
         static GameObject BuildWindingKey()
@@ -893,10 +1050,46 @@ namespace ElfAndSafety.EditorTools
             Block("Shaft", visual, new Vector3(0f, 0.07f, 0f), new Vector3(0.04f, 0.14f, 0.04f), brass);
             Block("Wing Left", visual, new Vector3(0f, 0.18f, -0.06f), new Vector3(0.03f, 0.1f, 0.1f), brass);
             Block("Wing Right", visual, new Vector3(0f, 0.18f, 0.06f), new Vector3(0.03f, 0.1f, 0.1f), brass);
+            return Part(root, PartKind.WindingKey, true);
+        }
 
-            var part = root.AddComponent<RobotPart>();
-            AssignEnum(part, "kind", (int)RobotPartKind.WindingKey);
-            AssignBool(part, "isWorking", true);
+        static GameObject BuildStuffing()
+        {
+            var root = CarryableRoot("Stuffing", 0.1f, new Vector3(0.14f, 0.14f, 0.14f), Vector3.zero);
+            var visual = root.transform.Find("Visual");
+            var fluff = Mat("Stuffing White", new Color(0.96f, 0.95f, 0.9f));
+            Block("Puff", visual, new Vector3(0f, 0.07f, 0f), new Vector3(0.14f, 0.12f, 0.14f), fluff, PrimitiveType.Sphere);
+            Block("Puff Top", visual, new Vector3(0.03f, 0.11f, 0.02f), Vector3.one * 0.08f, fluff, PrimitiveType.Sphere);
+            return Part(root, PartKind.Stuffing, true);
+        }
+
+        static GameObject BuildButtonEyes()
+        {
+            var root = CarryableRoot("Button Eyes", 0.05f, new Vector3(0.16f, 0.06f, 0.04f), Vector3.zero);
+            var visual = root.transform.Find("Visual");
+            var button = Mat("Button Black", new Color(0.05f, 0.05f, 0.06f));
+            Block("Eye Left", visual, new Vector3(-0.05f, 0.03f, 0f), new Vector3(0.05f, 0.05f, 0.03f), button, PrimitiveType.Sphere);
+            Block("Eye Right", visual, new Vector3(0.05f, 0.03f, 0f), new Vector3(0.05f, 0.05f, 0.03f), button, PrimitiveType.Sphere);
+            Block("Thread", visual, new Vector3(0f, 0.03f, -0.005f), new Vector3(0.1f, 0.005f, 0.005f), Mat("Stuffing White", Color.white));
+            return Part(root, PartKind.ButtonEyes, true);
+        }
+
+        static GameObject BuildWheelSet()
+        {
+            var root = CarryableRoot("Wheel Set", 0.25f, new Vector3(0.38f, 0.1f, 0.1f), Vector3.zero);
+            var visual = root.transform.Find("Visual");
+            var rubber = Mat("Tyre Black", new Color(0.08f, 0.08f, 0.08f));
+            Block("Axle", visual, new Vector3(0f, 0.05f, 0f), new Vector3(0.02f, 0.17f, 0.02f), Mat("Metal Grey", Color.grey), PrimitiveType.Cylinder, eulerAngles: new Vector3(0f, 0f, 90f));
+            Block("Wheel Left", visual, new Vector3(-0.17f, 0.05f, 0f), new Vector3(0.1f, 0.02f, 0.1f), rubber, PrimitiveType.Cylinder, eulerAngles: new Vector3(0f, 0f, 90f));
+            Block("Wheel Right", visual, new Vector3(0.17f, 0.05f, 0f), new Vector3(0.1f, 0.02f, 0.1f), rubber, PrimitiveType.Cylinder, eulerAngles: new Vector3(0f, 0f, 90f));
+            return Part(root, PartKind.WheelSet, true);
+        }
+
+        static GameObject Part(GameObject root, PartKind kind, bool working)
+        {
+            var part = root.AddComponent<ToyPart>();
+            AssignEnum(part, "kind", (int)kind);
+            AssignBool(part, "isWorking", working);
             return root;
         }
 
@@ -919,15 +1112,23 @@ namespace ElfAndSafety.EditorTools
             return root;
         }
 
-        static TestDeliveryBatch LoadOrCreateBatch()
+        /// <summary>The seven days; created with the default tuning only if missing, so tuned values are kept.</summary>
+        static ChristmasCountdown LoadOrCreateCountdown()
         {
-            var batch = AssetDatabase.LoadAssetAtPath<TestDeliveryBatch>(BatchPath);
-            if (batch == null)
+            var countdown = AssetDatabase.LoadAssetAtPath<ChristmasCountdown>(CountdownPath);
+            if (countdown == null)
             {
-                batch = ScriptableObject.CreateInstance<TestDeliveryBatch>();
-                AssetDatabase.CreateAsset(batch, BatchPath);
+                countdown = ScriptableObject.CreateInstance<ChristmasCountdown>();
+                AssetDatabase.CreateAsset(countdown, CountdownPath);
             }
-            return batch;
+            else if (countdown.days.Any(day => day.orders.Count == 0 || day.waves.Count == 0))
+            {
+                // Saved before days had wish orders and typed waves: those fields are empty, so start from the defaults.
+                countdown.days = ChristmasCountdown.DefaultWeek();
+                EditorUtility.SetDirty(countdown);
+                Debug.Log($"Elf & Safety: {CountdownPath} had no wish orders yet; reset it to the default week");
+            }
+            return countdown;
         }
 
         // ---------------------------------------------------------------- Station helpers

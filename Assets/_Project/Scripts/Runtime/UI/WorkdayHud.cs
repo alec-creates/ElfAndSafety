@@ -22,7 +22,7 @@ namespace ElfAndSafety
 
         void Awake()
         {
-            restartButton.onClick.AddListener(workday.Restart);
+            restartButton.onClick.AddListener(workday.Continue);
             verdictPanel.SetActive(false);
         }
 
@@ -40,12 +40,12 @@ namespace ElfAndSafety
             if (showVerdict)
             {
                 verdictTitle.text = workday.VerdictTitle;
-                verdictMessage.text = $"\"{workday.VerdictMessage}\"\n- Santa\n\nShipped {workday.Shipped} / {workday.Quota}";
-                restartButtonLabel.text = workday.State == ShiftState.Succeeded ? "Play Again (R)" : "Retry (R)";
+                verdictMessage.text = $"\"{workday.VerdictMessage}\"\n- Santa\n\nWishes filled {workday.Shipped} / {workday.Quota}";
+                restartButtonLabel.text = $"{workday.VerdictActionLabel} (R)";
 
                 if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
                 {
-                    workday.Restart();
+                    workday.Continue();
                 }
             }
         }
@@ -53,14 +53,17 @@ namespace ElfAndSafety
         string StatusText()
         {
             string time = WorkdayManager.FormatTime(workday.State == ShiftState.NotStarted ? workday.ShiftLengthSeconds : workday.RemainingSeconds);
+            string day = $"DAY {workday.DayNumber} · {workday.DayTitle}";
             switch (workday.State)
             {
                 case ShiftState.NotStarted:
-                    return $"PRACTICE: nothing counts yet. Press the green CLOCK IN button to start your shift ({time}, quota {workday.Quota})";
+                    string note = string.IsNullOrEmpty(workday.SantaNote) ? string.Empty : $"\nSanta: \"{workday.SantaNote}\"";
+                    return $"{day}        PRACTICE: nothing counts yet. Press the green CLOCK IN button ({time}, {workday.Quota} wishes on the WISH LIST){note}";
                 case ShiftState.Running:
-                    return $"{time} left        Shipped {workday.Shipped} / {workday.Quota}";
+                    string waves = workday.DeliveryWaves > 1 ? $"        Deliveries {workday.WavesDelivered} / {workday.DeliveryWaves}" : string.Empty;
+                    return $"{day}        {time} left        Wishes filled {workday.Shipped} / {workday.Quota}{waves}";
                 default:
-                    return $"Shift over        Shipped {workday.Shipped} / {workday.Quota}";
+                    return $"{day}        Shift over        Wishes filled {workday.Shipped} / {workday.Quota}";
             }
         }
     }

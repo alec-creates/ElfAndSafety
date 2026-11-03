@@ -13,9 +13,11 @@ namespace ElfAndSafety
     [RequireComponent(typeof(NetworkObject))]
     public class NetworkWorkshop : NetworkBehaviour
     {
+        readonly NetworkVariable<int> dayIndex = new NetworkVariable<int>();
         readonly NetworkVariable<ShiftState> shiftState = new NetworkVariable<ShiftState>(ShiftState.NotStarted);
         readonly NetworkVariable<float> remaining = new NetworkVariable<float>();
         readonly NetworkVariable<int> shipped = new NetworkVariable<int>();
+        readonly NetworkVariable<int> ordersFilled = new NetworkVariable<int>();
         readonly NetworkVariable<bool> batchOut = new NetworkVariable<bool>();
         readonly NetworkVariable<bool> cleaningActive = new NetworkVariable<bool>();
         readonly NetworkVariable<float> cleaningProgress = new NetworkVariable<float>();
@@ -29,6 +31,7 @@ namespace ElfAndSafety
 
         public static NetworkWorkshop Instance { get; private set; }
 
+        internal int SyncedDayIndex => dayIndex.Value;
         internal ShiftState SyncedShiftState => shiftState.Value;
         internal int SyncedShipped => shipped.Value;
 
@@ -66,6 +69,7 @@ namespace ElfAndSafety
         {
             if (workday != null)
             {
+                if (dayIndex.Value != workday.DayIndex) dayIndex.Value = workday.DayIndex;
                 if (shiftState.Value != workday.State) shiftState.Value = workday.State;
                 if (Mathf.Abs(remaining.Value - workday.RemainingSeconds) > 0.05f || workday.RemainingSeconds <= 0f && remaining.Value != 0f)
                 {
@@ -74,6 +78,7 @@ namespace ElfAndSafety
             }
 
             if (counter != null && shipped.Value != counter.Shipped) shipped.Value = counter.Shipped;
+            if (workday != null && ordersFilled.Value != workday.FulfilledMask) ordersFilled.Value = workday.FulfilledMask;
             if (delivery != null && batchOut.Value != delivery.HasActiveBatch) batchOut.Value = delivery.HasActiveBatch;
 
             if (cleaning != null)
@@ -96,7 +101,11 @@ namespace ElfAndSafety
             if (delivery != null) delivery.MirrorBatchOut(batchOut.Value);
             if (cleaning != null) cleaning.MirrorCleaning(cleaningActive.Value, cleaningProgress.Value);
             if (shipping != null) shipping.MirrorLastResult(lastShipResult.Value.ToString());
-            if (workday != null) workday.ApplyMirror(shiftState.Value, remaining.Value);
+            if (workday != null)
+            {
+                workday.ApplyMirror(dayIndex.Value, shiftState.Value, remaining.Value);
+                workday.MirrorFulfilled(ordersFilled.Value);
+            }
         }
 
         // --- Station messages for everyone, and restarting together. ---
@@ -113,13 +122,22 @@ namespace ElfAndSafety
             else WorkshopFeedback.Info(message.ToString());
         }
 
-        /// <summary>Play Again / Retry from any player: the host resets the workshop for everyone.</summary>
+        /// <summary>The verdict button from any player: the host moves everyone on (next day or day 1).</summary>
+        internal void RequestContinue() => ContinueRpc();
+
+        /// <summary>Back to day 1 for everyone.</summary>
         internal void RequestRestart() => RestartRpc();
+
+        [Rpc(SendTo.Server)]
+        void ContinueRpc()
+        {
+            if (workday != null) workday.ContinueLocally();
+        }
 
         [Rpc(SendTo.Server)]
         void RestartRpc()
         {
-            if (workday != null) workday.ResetShift();
+            if (workday != null) workday.ResetShift(0);
         }
 
         static string Truncate(string text, int maxLength)

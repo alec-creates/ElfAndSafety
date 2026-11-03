@@ -18,7 +18,7 @@ namespace ElfAndSafety
         [SerializeField] float gravity = -20f;
 
         [Header("Look")]
-        [SerializeField] float mouseSensitivity = 0.12f;
+        [Tooltip("Mouse sensitivity, invert Y and field of view come from the player's settings (GameSettings).")]
         [SerializeField] float maxPitch = 85f;
 
         CharacterController controller;
@@ -44,6 +44,17 @@ namespace ElfAndSafety
             spawnPosition = transform.position;
             spawnRotation = transform.rotation;
             GameLayers.ApplyCollisionRules();
+            ApplyFieldOfView();
+        }
+
+        void OnEnable() => GameSettings.Changed += ApplyFieldOfView;
+
+        void OnDisable() => GameSettings.Changed -= ApplyFieldOfView;
+
+        void ApplyFieldOfView()
+        {
+            Camera view = cameraPivot != null ? cameraPivot.GetComponentInChildren<Camera>(true) : null;
+            if (view != null) view.fieldOfView = GameSettings.FieldOfView;
         }
 
         /// <summary>Back to where this elf started, able to move, for the next day without reloading.</summary>
@@ -75,7 +86,8 @@ namespace ElfAndSafety
 
         void UpdateLook()
         {
-            Vector2 look = input.Look * mouseSensitivity;
+            Vector2 look = input.Look * GameSettings.MouseSensitivity;
+            if (GameSettings.InvertY) look.y = -look.y;
             transform.Rotate(0f, look.x, 0f, Space.Self);
 
             pitch = Mathf.Clamp(pitch - look.y, -maxPitch, maxPitch);

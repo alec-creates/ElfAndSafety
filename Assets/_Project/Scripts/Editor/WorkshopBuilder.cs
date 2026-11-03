@@ -26,6 +26,7 @@ namespace ElfAndSafety.EditorTools
     {
         const string Root = "Assets/_Project";
         const string ScenePath = Root + "/Scenes/Workshop.unity";
+        const string MainMenuPath = Root + "/Scenes/MainMenu.unity";
         const string MaterialFolder = Root + "/Art/Materials";
         const string PrefabFolder = Root + "/Prefabs";
         const string DataFolder = Root + "/Data";
@@ -58,12 +59,12 @@ namespace ElfAndSafety.EditorTools
             "Leaky Battery", "Overwound Winding Key", "Loose Button Eyes", "Wobbly Wheel Set",
         };
 
-        [MenuItem("Elf & Safety/Build Workshop Scene")]
+        [MenuItem("Elf & Safety/Build Game Scenes")]
         public static void BuildFromMenu()
         {
-            if (File.Exists(ScenePath) &&
-                !EditorUtility.DisplayDialog("Rebuild workshop?",
-                    $"{ScenePath} will be regenerated. The current file is backed up to {BackupFolder}/ first; existing materials, prefabs and the delivery batch asset are kept.",
+            if ((File.Exists(ScenePath) || File.Exists(MainMenuPath)) &&
+                !EditorUtility.DisplayDialog("Rebuild the game scenes?",
+                    $"The Main Menu and Workshop scenes will be regenerated. The current files are backed up to {BackupFolder}/ first; existing materials, prefabs and data assets are kept.",
                     "Rebuild", "Cancel"))
             {
                 return;
@@ -104,7 +105,7 @@ namespace ElfAndSafety.EditorTools
             materials.Clear();
             labelFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            BackUpExistingScene();
+            BackUpExistingScene(ScenePath);
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             BuildToyPrefabs();
@@ -135,26 +136,31 @@ namespace ElfAndSafety.EditorTools
             Assign(workday, "countdown", LoadOrCreateCountdown());
 
             EditorSceneManager.SaveScene(scene, ScenePath);
+
+            BuildMainMenuScene(toys);
+
+            // The main menu opens first in a build; the Workshop is loaded from it.
             AddSceneToBuildSettings(ScenePath);
+            AddSceneToBuildSettings(MainMenuPath);
             AssetDatabase.SaveAssets();
-            Debug.Log($"Elf & Safety: built {ScenePath}. Press Play to test.");
+            Debug.Log($"Elf & Safety: built {MainMenuPath} and {ScenePath}. Press Play to test.");
         }
 
         /// <summary>
         /// Copies the scene about to be regenerated into SceneBackups/ next to Assets/, so hand edits are
         /// never lost. Outside Assets on purpose: Unity doesn't import it as a second scene with the same GUID.
         /// </summary>
-        static void BackUpExistingScene()
+        static void BackUpExistingScene(string scenePath)
         {
-            if (!File.Exists(ScenePath))
+            if (!File.Exists(scenePath))
             {
                 return;
             }
 
             Directory.CreateDirectory(BackupFolder);
-            string backup = Path.Combine(BackupFolder, $"Workshop_{DateTime.Now:yyyyMMdd_HHmmss}.unity");
-            File.Copy(ScenePath, backup, overwrite: false);
-            Debug.Log($"Elf & Safety: backed up {ScenePath} to {backup}");
+            string backup = Path.Combine(BackupFolder, $"{Path.GetFileNameWithoutExtension(scenePath)}_{DateTime.Now:yyyyMMdd_HHmmss}.unity");
+            File.Copy(scenePath, backup, overwrite: true);
+            Debug.Log($"Elf & Safety: backed up {scenePath} to {backup}");
         }
 
         // ---------------------------------------------------------------- Environment
@@ -547,6 +553,16 @@ namespace ElfAndSafety.EditorTools
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.matchWidthOrHeight = 0.5f;
 
+            var topBar = new GameObject("Top Bar").AddComponent<Image>();
+            topBar.transform.SetParent(canvasObject.transform, false);
+            topBar.color = new Color(0.05f, 0.03f, 0.04f, 0.55f);
+            topBar.raycastTarget = false;
+            topBar.rectTransform.anchorMin = new Vector2(0f, 1f);
+            topBar.rectTransform.anchorMax = new Vector2(1f, 1f);
+            topBar.rectTransform.pivot = new Vector2(0.5f, 1f);
+            topBar.rectTransform.sizeDelta = new Vector2(0f, 150f);
+            topBar.rectTransform.anchoredPosition = Vector2.zero;
+
             var crosshair = new GameObject("Crosshair").AddComponent<Image>();
             crosshair.transform.SetParent(canvasObject.transform, false);
             crosshair.rectTransform.sizeDelta = new Vector2(8f, 8f);
@@ -559,7 +575,7 @@ namespace ElfAndSafety.EditorTools
             var shift = HudText(canvasObject.transform, "Shift Status", new Vector2(0f, -70f), 32, TextAnchor.UpperCenter, new Vector2(0.5f, 1f));
             shift.rectTransform.sizeDelta = new Vector2(1500f, 80f);
             var controls = HudText(canvasObject.transform, "Controls", new Vector2(24f, -20f), 22, TextAnchor.UpperLeft, new Vector2(0f, 1f));
-            controls.text = "WASD move   Mouse look   Shift sprint   Space hop\nE / Click interact   Q drop   Esc release mouse";
+            controls.text = "WASD move   Mouse look   Shift sprint   Space hop\nE / Click interact   Q drop   Esc pause";
             controls.color = new Color(1f, 1f, 1f, 0.7f);
             info.color = new Color(0.85f, 0.95f, 1f, 0.9f);
 
@@ -571,7 +587,12 @@ namespace ElfAndSafety.EditorTools
             Assign(hud, "infoLabel", info);
             Assign(hud, "feedbackLabel", feedback);
 
-            BuildVerdictPanel(canvasObject.transform, canvasObject, workday, shift);
+            var wishList = HudText(canvasObject.transform, "Wish List", new Vector2(-28f, -170f), 24, TextAnchor.UpperRight, new Vector2(1f, 1f));
+            wishList.rectTransform.sizeDelta = new Vector2(560f, 320f);
+            wishList.color = new Color(1f, 0.95f, 0.8f, 0.92f);
+
+            BuildVerdictPanel(canvasObject.transform, canvasObject, workday, shift, wishList, controls.gameObject);
+            BuildPauseMenu(canvasObject.transform, canvasObject, workday);
 
             var eventSystem = new GameObject("EventSystem");
             eventSystem.AddComponent<EventSystem>();
@@ -580,7 +601,7 @@ namespace ElfAndSafety.EditorTools
         }
 
         /// <summary>Santa's verdict: a dimmed full-screen panel with a title, his line, and the restart button.</summary>
-        static void BuildVerdictPanel(Transform canvas, GameObject hudObject, WorkdayManager workday, Text shiftLabel)
+        static void BuildVerdictPanel(Transform canvas, GameObject hudObject, WorkdayManager workday, Text shiftLabel, Text wishList, GameObject controlsHint)
         {
             var panel = new GameObject("Verdict Panel").AddComponent<Image>();
             panel.transform.SetParent(canvas, false);
@@ -601,10 +622,20 @@ namespace ElfAndSafety.EditorTools
             buttonImage.transform.SetParent(panel.transform, false);
             buttonImage.color = new Color(0.2f, 0.7f, 0.3f);
             buttonImage.rectTransform.sizeDelta = new Vector2(380f, 90f);
-            buttonImage.rectTransform.anchoredPosition = new Vector2(0f, -190f);
+            buttonImage.rectTransform.anchoredPosition = new Vector2(-210f, -190f);
             var button = buttonImage.gameObject.AddComponent<Button>();
             var buttonLabel = HudText(buttonImage.transform, "Label", Vector2.zero, 36, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f));
             buttonLabel.rectTransform.sizeDelta = new Vector2(380f, 90f);
+
+            var menuImage = new GameObject("Main Menu Button").AddComponent<Image>();
+            menuImage.transform.SetParent(panel.transform, false);
+            menuImage.color = new Color(0.35f, 0.18f, 0.18f);
+            menuImage.rectTransform.sizeDelta = new Vector2(380f, 90f);
+            menuImage.rectTransform.anchoredPosition = new Vector2(210f, -190f);
+            var menuButton = menuImage.gameObject.AddComponent<Button>();
+            var menuLabel = HudText(menuImage.transform, "Label", Vector2.zero, 36, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f));
+            menuLabel.rectTransform.sizeDelta = new Vector2(380f, 90f);
+            menuLabel.text = "Main Menu";
 
             panel.gameObject.SetActive(false);
 
@@ -616,6 +647,378 @@ namespace ElfAndSafety.EditorTools
             Assign(hud, "verdictMessage", message);
             Assign(hud, "restartButton", button);
             Assign(hud, "restartButtonLabel", buttonLabel);
+            Assign(hud, "mainMenuButton", menuButton);
+            Assign(hud, "wishListLabel", wishList);
+            Assign(hud, "controlsHint", controlsHint);
+        }
+
+        /// <summary>Esc: Resume, Settings, Main Menu, Quit, over a dimmed screen.</summary>
+        static void BuildPauseMenu(Transform canvas, GameObject hudObject, WorkdayManager workday)
+        {
+            var dim = new GameObject("Pause Menu").AddComponent<Image>();
+            dim.transform.SetParent(canvas, false);
+            dim.color = new Color(0.03f, 0.02f, 0.05f, 0.75f);
+            Stretch(dim.rectTransform);
+
+            RectTransform column = UiColumn(dim.transform, "Pause Column", new Vector2(620f, 640f), new Color(0.12f, 0.06f, 0.08f, 0.95f));
+            UiLabel(column, "PAUSED", 64, new Color(1f, 0.82f, 0.2f), 90f);
+            Text note = UiLabel(column, "", 24, new Color(1f, 1f, 1f, 0.7f), 34f);
+            Button resume = UiButton(column, "Resume", new Color(0.2f, 0.62f, 0.3f));
+            Button settingsButton = UiButton(column, "Settings");
+            Button mainMenu = UiButton(column, "Main Menu");
+            Button quit = UiButton(column, "Quit Game", new Color(0.55f, 0.16f, 0.16f));
+
+            SettingsMenu settings = BuildSettingsPanel(canvas, dim.gameObject);
+
+            var pause = hudObject.AddComponent<PauseMenu>();
+            Assign(pause, "panel", dim.gameObject);
+            Assign(pause, "settings", settings);
+            Assign(pause, "workday", workday);
+            Assign(pause, "noteLabel", note);
+            Assign(pause, "resumeButton", resume);
+            Assign(pause, "settingsButton", settingsButton);
+            Assign(pause, "mainMenuButton", mainMenu);
+            Assign(pause, "quitButton", quit);
+            dim.gameObject.SetActive(false);
+        }
+
+        // ---------------------------------------------------------------- Main menu scene
+
+        static void BuildMainMenuScene(ToyPrefabs toys)
+        {
+            BackUpExistingScene(MainMenuPath);
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            // A small festive corner of the workshop behind the menu.
+            var cam = new GameObject("Menu Camera").AddComponent<Camera>();
+            cam.tag = "MainCamera";
+            cam.transform.SetPositionAndRotation(new Vector3(1.2f, 1.5f, -3.4f), Quaternion.Euler(10f, -12f, 0f));
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0.07f, 0.04f, 0.08f);
+            cam.fieldOfView = 55f;
+            cam.gameObject.AddComponent<AudioListener>();
+
+            BuildLighting();
+            var set = new GameObject("Backdrop").transform;
+            Block("Floor", set, new Vector3(0f, -0.1f, 0f), new Vector3(10f, 0.2f, 8f), Mat("Floor Wood", new Color(0.55f, 0.36f, 0.22f)), keepCollider: true);
+            Block("Wall", set, new Vector3(0f, 2f, 2.5f), new Vector3(10f, 4f, 0.3f), Mat("Wall Brick", new Color(0.55f, 0.18f, 0.16f)));
+            Block("Trim", set, new Vector3(0f, 0.3f, 2.34f), new Vector3(10f, 0.6f, 0.05f), Mat("Wall Trim Green", new Color(0.12f, 0.38f, 0.22f)));
+
+            var tree = new GameObject("Tree").transform;
+            tree.SetParent(set, false);
+            tree.localPosition = new Vector3(-2.6f, 0f, 1.4f);
+            var pine = Mat("Tree Green", new Color(0.1f, 0.42f, 0.2f));
+            Block("Trunk", tree, new Vector3(0f, 0.25f, 0f), new Vector3(0.25f, 0.5f, 0.25f), Mat("Crate Brown", new Color(0.45f, 0.3f, 0.16f)));
+            Block("Tier 1", tree, new Vector3(0f, 0.8f, 0f), new Vector3(1.4f, 0.6f, 1.4f), pine, eulerAngles: new Vector3(0f, 45f, 0f));
+            Block("Tier 2", tree, new Vector3(0f, 1.4f, 0f), new Vector3(1f, 0.55f, 1f), pine, eulerAngles: new Vector3(0f, 20f, 0f));
+            Block("Tier 3", tree, new Vector3(0f, 1.9f, 0f), new Vector3(0.6f, 0.5f, 0.6f), pine, eulerAngles: new Vector3(0f, 60f, 0f));
+            Block("Star", tree, new Vector3(0f, 2.3f, 0f), Vector3.one * 0.25f, Mat("Bulb", new Color(1f, 0.9f, 0.6f), emission: new Color(1f, 0.8f, 0.45f) * 2f), PrimitiveType.Sphere);
+
+            var gold = Mat("Ribbon Gold", new Color(0.95f, 0.72f, 0.2f));
+            (Vector3 pos, Vector3 size, Material paper)[] gifts =
+            {
+                (new Vector3(-1.7f, 0.2f, 0.6f), new Vector3(0.5f, 0.4f, 0.5f), Mat("Santa Red", new Color(0.78f, 0.08f, 0.1f))),
+                (new Vector3(-1.2f, 0.15f, 0.2f), new Vector3(0.35f, 0.3f, 0.35f), Mat("Elf Green", new Color(0.15f, 0.55f, 0.25f))),
+                (new Vector3(-2.0f, 0.12f, 0.0f), new Vector3(0.3f, 0.24f, 0.4f), Mat("Wash Blue", new Color(0.25f, 0.55f, 0.85f))),
+            };
+            foreach (var gift in gifts)
+            {
+                var box = Block("Gift", set, gift.pos, gift.size, gift.paper).transform;
+                Block("Ribbon", box, Vector3.zero, new Vector3(1.02f, 1.02f, 0.18f), gold);
+                Block("Ribbon", box, Vector3.zero, new Vector3(0.18f, 1.02f, 1.02f), gold);
+            }
+
+            // The three toys on display. Kinematic so they stay put; they're just props here.
+            float x = 0.2f;
+            foreach (ToyBody toy in toys.Toys)
+            {
+                var prop = (GameObject)PrefabUtility.InstantiatePrefab(toy.gameObject);
+                prop.transform.SetPositionAndRotation(new Vector3(x, 0f, 0.4f), Quaternion.Euler(0f, 160f + x * 10f, 0f));
+                prop.GetComponent<Rigidbody>().isKinematic = true;
+                x += 0.75f;
+            }
+
+            // Menu UI.
+            var canvasObject = new GameObject("Menu UI");
+            var canvas = canvasObject.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            var scaler = canvasObject.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
+            canvasObject.AddComponent<GraphicRaycaster>();
+
+            var title = HudText(canvasObject.transform, "Title", new Vector2(110f, -70f), 120, TextAnchor.UpperLeft, new Vector2(0f, 1f));
+            title.text = "ELF & SAFETY";
+            title.color = new Color(1f, 0.82f, 0.2f);
+            title.rectTransform.sizeDelta = new Vector2(1200f, 150f);
+            var tagline = HudText(canvasObject.transform, "Tagline", new Vector2(116f, -205f), 34, TextAnchor.UpperLeft, new Vector2(0f, 1f));
+            tagline.text = "Santa's workshop. Safety first. Yours last.";
+            tagline.rectTransform.sizeDelta = new Vector2(1200f, 60f);
+            var version = HudText(canvasObject.transform, "Version", new Vector2(-24f, 20f), 20, TextAnchor.LowerRight, new Vector2(1f, 0f));
+            version.text = $"Prototype  \u00b7  Unity {Application.unityVersion}";
+            version.color = new Color(1f, 1f, 1f, 0.5f);
+
+            RectTransform main = UiColumn(canvasObject.transform, "Main Panel", new Vector2(600f, 720f), new Color(0.1f, 0.05f, 0.07f, 0.88f), new Vector2(110f, -280f));
+            Button playSolo = UiButton(main, "Play Solo", new Color(0.2f, 0.62f, 0.3f));
+            Button host = UiButton(main, "Host Co-op");
+            InputField address = UiInputRow(main, "Join address");
+            Button join = UiButton(main, "Join Co-op");
+            Button howTo = UiButton(main, "How to Play");
+            Button settingsButton = UiButton(main, "Settings");
+            Button quit = UiButton(main, "Quit", new Color(0.55f, 0.16f, 0.16f));
+            Text message = UiLabel(main, "", 24, new Color(1f, 0.55f, 0.45f), 40f);
+
+            RectTransform howToPanel = UiColumn(canvasObject.transform, "How To Play Panel", new Vector2(1100f, 760f), new Color(0.1f, 0.05f, 0.07f, 0.94f));
+            UiLabel(howToPanel, "HOW TO PLAY", 56, new Color(1f, 0.82f, 0.2f), 80f);
+            Text howToText = UiLabel(howToPanel,
+                "Santa needs every present out before Christmas. Each day has a WISH LIST of toys.\n\n" +
+                "1. Clock in at the green CLOCK IN button to start the day's shift.\n" +
+                "2. Broken toys arrive on the delivery table. Salvage good parts at the SALVAGE bench,\n" +
+                "    scrub dirty toys in the tub, and fit parts at the ASSEMBLY bench.\n" +
+                "3. Ship finished toys at the SHIPPING chute. Each must match a wish exactly.\n" +
+                "4. Watch for faulty parts: rusty keys, leaking batteries, wobbly wheels, loose eyes.\n" +
+                "5. Fill every wish before time runs out, or meet the trapdoor.\n\n" +
+                "WASD move  ·  Mouse look  ·  Shift sprint  ·  Space hop\n" +
+                "E / Click interact  ·  Q drop  ·  Esc pause", 26, Color.white, 470f);
+            howToText.alignment = TextAnchor.UpperLeft;
+            Button howToBack = UiButton(howToPanel, "Back");
+
+            SettingsMenu settings = BuildSettingsPanel(canvasObject.transform, main.gameObject);
+
+            var eventSystem = new GameObject("EventSystem");
+            eventSystem.AddComponent<EventSystem>();
+            eventSystem.AddComponent<InputSystemUIInputModule>().AssignDefaultActions();
+
+            var menu = canvasObject.AddComponent<MainMenu>();
+            Assign(menu, "mainPanel", main.gameObject);
+            Assign(menu, "howToPlayPanel", howToPanel.gameObject);
+            Assign(menu, "settings", settings);
+            Assign(menu, "joinAddress", address);
+            Assign(menu, "messageLabel", message);
+            Assign(menu, "playSoloButton", playSolo);
+            Assign(menu, "hostButton", host);
+            Assign(menu, "joinButton", join);
+            Assign(menu, "howToPlayButton", howTo);
+            Assign(menu, "settingsButton", settingsButton);
+            Assign(menu, "quitButton", quit);
+            Assign(menu, "howToPlayBackButton", howToBack);
+            howToPanel.gameObject.SetActive(false);
+
+            EditorSceneManager.SaveScene(scene, MainMenuPath);
+        }
+
+        /// <summary>The settings panel shared by both menus. Back returns to <paramref name="returnTo"/>.</summary>
+        static SettingsMenu BuildSettingsPanel(Transform canvas, GameObject returnTo)
+        {
+            RectTransform panel = UiColumn(canvas, "Settings Panel", new Vector2(980f, 960f), new Color(0.1f, 0.05f, 0.07f, 0.96f));
+            UiLabel(panel, "SETTINGS", 56, new Color(1f, 0.82f, 0.2f), 76f);
+            var (sensitivity, sensitivityValue) = UiSliderRow(panel, "Mouse sensitivity");
+            Toggle invert = UiToggleRow(panel, "Invert mouse Y");
+            var (fov, fovValue) = UiSliderRow(panel, "Field of view");
+            var (volume, volumeValue) = UiSliderRow(panel, "Master volume");
+            Toggle fullscreen = UiToggleRow(panel, "Fullscreen");
+            Dropdown resolution = UiDropdownRow(panel, "Resolution");
+            Dropdown quality = UiDropdownRow(panel, "Graphics quality");
+            Toggle vSync = UiToggleRow(panel, "VSync");
+            Toggle showControls = UiToggleRow(panel, "Show controls hint");
+            Toggle showWishList = UiToggleRow(panel, "Show wish list on screen");
+
+            RectTransform buttons = UiRow(panel, "Buttons", 80f);
+            Button reset = UiButton(buttons, "Reset to defaults", null, 360f);
+            Button back = UiButton(buttons, "Back", new Color(0.2f, 0.62f, 0.3f), 360f);
+
+            var settings = panel.gameObject.AddComponent<SettingsMenu>();
+            Assign(settings, "sensitivity", sensitivity);
+            Assign(settings, "sensitivityValue", sensitivityValue);
+            Assign(settings, "invertY", invert);
+            Assign(settings, "fieldOfView", fov);
+            Assign(settings, "fieldOfViewValue", fovValue);
+            Assign(settings, "volume", volume);
+            Assign(settings, "volumeValue", volumeValue);
+            Assign(settings, "fullscreen", fullscreen);
+            Assign(settings, "resolution", resolution);
+            Assign(settings, "quality", quality);
+            Assign(settings, "vSync", vSync);
+            Assign(settings, "showControls", showControls);
+            Assign(settings, "showWishList", showWishList);
+            Assign(settings, "resetButton", reset);
+            Assign(settings, "backButton", back);
+            Assign(settings, "returnTo", returnTo);
+            panel.gameObject.SetActive(false);
+            return settings;
+        }
+
+        // ---------------------------------------------------------------- UI kit (built on uGUI's DefaultControls)
+
+        static DefaultControls.Resources uiResources;
+
+        static DefaultControls.Resources UiResources()
+        {
+            if (uiResources.standard == null)
+            {
+                uiResources = new DefaultControls.Resources
+                {
+                    standard = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"),
+                    background = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Background.psd"),
+                    inputField = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/InputFieldBackground.psd"),
+                    knob = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd"),
+                    checkmark = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Checkmark.psd"),
+                    dropdown = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/DropdownArrow.psd"),
+                    mask = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UIMask.psd"),
+                };
+            }
+            return uiResources;
+        }
+
+        static void Stretch(RectTransform rect)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+        }
+
+        /// <summary>A panel that stacks its children top to bottom. Centred, or top-left at <paramref name="topLeft"/>.</summary>
+        static RectTransform UiColumn(Transform parent, string name, Vector2 size, Color color, Vector2? topLeft = null)
+        {
+            var image = new GameObject(name).AddComponent<Image>();
+            image.transform.SetParent(parent, false);
+            image.color = color;
+            RectTransform rect = image.rectTransform;
+            rect.sizeDelta = size;
+            if (topLeft.HasValue)
+            {
+                rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
+                rect.anchoredPosition = topLeft.Value;
+            }
+
+            var layout = image.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(40, 40, 32, 32);
+            layout.spacing = 14f;
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            return rect;
+        }
+
+        static RectTransform UiRow(Transform parent, string name, float height)
+        {
+            var row = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
+            row.SetParent(parent, false);
+            var layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.spacing = 18f;
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = true;
+            row.gameObject.AddComponent<LayoutElement>().preferredHeight = height;
+            return row;
+        }
+
+        static Text UiLabel(Transform parent, string text, int size, Color color, float height, float width = -1f)
+        {
+            var label = new GameObject("Label").AddComponent<Text>();
+            label.transform.SetParent(parent, false);
+            label.font = labelFont;
+            label.text = text;
+            label.fontSize = size;
+            label.color = color;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.raycastTarget = false;
+            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            label.verticalOverflow = VerticalWrapMode.Overflow;
+            var element = label.gameObject.AddComponent<LayoutElement>();
+            element.preferredHeight = height;
+            if (width > 0f) element.preferredWidth = width;
+            return label;
+        }
+
+        static void UseLabelFont(GameObject control, int size)
+        {
+            foreach (Text text in control.GetComponentsInChildren<Text>(true))
+            {
+                text.font = labelFont;
+                text.fontSize = size;
+            }
+        }
+
+        static Button UiButton(Transform parent, string label, Color? color = null, float width = -1f)
+        {
+            GameObject go = DefaultControls.CreateButton(UiResources());
+            go.name = $"{label} Button";
+            go.transform.SetParent(parent, false);
+            go.GetComponent<Image>().color = color ?? new Color(0.28f, 0.2f, 0.24f);
+            UseLabelFont(go, 32);
+            Text text = go.GetComponentInChildren<Text>();
+            text.text = label;
+            text.color = Color.white;
+            var element = go.AddComponent<LayoutElement>();
+            element.preferredHeight = 70f;
+            if (width > 0f) element.preferredWidth = width;
+            return go.GetComponent<Button>();
+        }
+
+        static (Slider slider, Text value) UiSliderRow(Transform parent, string label)
+        {
+            RectTransform row = UiRow(parent, label, 50f);
+            UiLabel(row, label, 28, Color.white, 50f, 360f).alignment = TextAnchor.MiddleLeft;
+            GameObject go = DefaultControls.CreateSlider(UiResources());
+            go.name = $"{label} Slider";
+            go.transform.SetParent(row, false);
+            var element = go.AddComponent<LayoutElement>();
+            element.preferredWidth = 380f;
+            element.preferredHeight = 30f;
+            Text value = UiLabel(row, "", 28, new Color(1f, 0.9f, 0.6f), 50f, 110f);
+            return (go.GetComponent<Slider>(), value);
+        }
+
+        static Toggle UiToggleRow(Transform parent, string label)
+        {
+            GameObject go = DefaultControls.CreateToggle(UiResources());
+            go.name = $"{label} Toggle";
+            go.transform.SetParent(parent, false);
+            UseLabelFont(go, 28);
+            Text text = go.GetComponentInChildren<Text>();
+            text.text = label;
+            text.color = Color.white;
+            // Make the box and label readable at menu size.
+            Transform box = go.transform.Find("Background");
+            if (box != null) ((RectTransform)box).sizeDelta = new Vector2(34f, 34f);
+            ((RectTransform)text.transform).offsetMin = new Vector2(50f, 0f);
+            go.AddComponent<LayoutElement>().preferredHeight = 44f;
+            return go.GetComponent<Toggle>();
+        }
+
+        static Dropdown UiDropdownRow(Transform parent, string label)
+        {
+            RectTransform row = UiRow(parent, label, 50f);
+            UiLabel(row, label, 28, Color.white, 50f, 360f).alignment = TextAnchor.MiddleLeft;
+            GameObject go = DefaultControls.CreateDropdown(UiResources());
+            go.name = $"{label} Dropdown";
+            go.transform.SetParent(row, false);
+            UseLabelFont(go, 24);
+            var element = go.AddComponent<LayoutElement>();
+            element.preferredWidth = 500f;
+            element.preferredHeight = 46f;
+            return go.GetComponent<Dropdown>();
+        }
+
+        static InputField UiInputRow(Transform parent, string label)
+        {
+            RectTransform row = UiRow(parent, label, 56f);
+            UiLabel(row, label, 26, Color.white, 56f, 200f).alignment = TextAnchor.MiddleLeft;
+            GameObject go = DefaultControls.CreateInputField(UiResources());
+            go.name = $"{label} Input";
+            go.transform.SetParent(row, false);
+            UseLabelFont(go, 28);
+            var element = go.AddComponent<LayoutElement>();
+            element.preferredWidth = 300f;
+            element.preferredHeight = 52f;
+            return go.GetComponent<InputField>();
         }
 
         static Text HudText(Transform parent, string name, Vector2 position, int size, TextAnchor anchor, Vector2 pivot)
@@ -1415,6 +1818,7 @@ namespace ElfAndSafety.EditorTools
             }
         }
 
+        /// <summary>Puts the scene first in the build list (so the last one added opens first).</summary>
         static void AddSceneToBuildSettings(string path)
         {
             var scenes = EditorBuildSettings.scenes.Where(s => s.path != path).ToList();

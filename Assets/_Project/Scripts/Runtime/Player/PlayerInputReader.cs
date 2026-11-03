@@ -24,11 +24,11 @@ namespace ElfAndSafety
         public bool AllowCursorCapture { get; set; } = true;
 
         public bool HasFocus => Cursor.lockState == CursorLockMode.Locked;
-        public Vector2 Move => HasFocus ? moveAction.ReadValue<Vector2>() : Vector2.zero;
-        public Vector2 Look => HasFocus ? lookAction.ReadValue<Vector2>() : Vector2.zero;
+        public Vector2 Move => HasFocus && !PauseMenu.IsPaused ? moveAction.ReadValue<Vector2>() : Vector2.zero;
+        public Vector2 Look => HasFocus && !PauseMenu.IsPaused ? lookAction.ReadValue<Vector2>() : Vector2.zero;
         public bool JumpPressed => HasFocus && jumpAction.WasPressedThisFrame();
         public bool SprintHeld => HasFocus && sprintAction.IsPressed();
-        public bool InteractPressed => HasFocus && !swallowClickThisFrame && interactAction.WasPressedThisFrame();
+        public bool InteractPressed => HasFocus && !PauseMenu.IsPaused && !swallowClickThisFrame && interactAction.WasPressedThisFrame();
         public bool DropPressed => HasFocus && dropAction.WasPressedThisFrame();
 
         void Awake()
@@ -83,7 +83,8 @@ namespace ElfAndSafety
         {
             swallowClickThisFrame = false;
 
-            if (releaseCursorAction.WasPressedThisFrame())
+            // With a pause menu in the scene, Esc opens it (and it frees the mouse) instead.
+            if (releaseCursorAction.WasPressedThisFrame() && !PauseMenu.HandlesEscape)
             {
                 LockCursor(false);
             }

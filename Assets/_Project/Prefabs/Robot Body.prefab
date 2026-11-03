@@ -119,9 +119,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e1b500cd28a28134a934500e3d90e5a2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: ElfAndSafety.Runtime::ElfAndSafety.RobotBody
+  type: 0
   isDirty: 1
-  batteryMount: {fileID: 4875807551930321135}
-  keyMount: {fileID: 4084199056453687936}
+  slots:
+  - name: Battery
+    accepts: 0
+    mount: {fileID: 4875807551930321135}
+  - name: Winding Key
+    accepts: 1
+    mount: {fileID: 4084199056453687936}
   dirtVisual: {fileID: 6734483219591833428}
 --- !u!114 &5650218311830861149
 MonoBehaviour:
@@ -736,7 +742,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 90842658ce12872428e14321bda0e7f0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: ElfAndSafety.Runtime::ElfAndSafety.RobotSlotTarget
-  slot: 1
+  slotIndex: 1
 --- !u!1 &4719747191845567195
 GameObject:
   m_ObjectHideFlags: 0
@@ -893,7 +899,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 90842658ce12872428e14321bda0e7f0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: ElfAndSafety.Runtime::ElfAndSafety.RobotSlotTarget
-  slot: 0
+  slotIndex: 0
 --- !u!1 &6705091545101961291
 GameObject:
   m_ObjectHideFlags: 0

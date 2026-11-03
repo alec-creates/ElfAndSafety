@@ -210,18 +210,18 @@ namespace ElfAndSafety.Tests
         }
 
         [UnityTest]
-        public IEnumerator Leaving_ReturnsToSolo()
+        public IEnumerator Leaving_ReturnsToTheMainMenu()
         {
             Assert.IsTrue(session.StartHost());
             yield return WaitFor(() => NetworkSession.IsServer);
 
             session.Leave();
-            yield return WaitFor(() => NetworkManager.Singleton == null && Object.FindAnyObjectByType<PlayerInteractor>() != null
-                && Object.FindAnyObjectByType<PlayerInteractor>().GetComponent<NetworkPlayer>() == null);
+            yield return WaitFor(() => NetworkManager.Singleton == null && SceneManager.GetActiveScene().name == GameLaunch.MainMenuScene);
 
-            Assert.IsNull(NetworkManager.Singleton);
+            Assert.IsNull(NetworkManager.Singleton, "No network manager left behind");
             Assert.IsFalse(NetworkSession.IsOnline);
-            Assert.AreEqual(1, Object.FindObjectsByType<PlayerInteractor>().Length, "The solo elf is back");
+            Assert.IsNotNull(Object.FindAnyObjectByType<MainMenu>());
+            Assert.IsNull(GameLaunch.TakeMenuMessage(), "Leaving on purpose shows no error");
         }
 
         static IEnumerator WaitFor(System.Func<bool> condition, float timeout = 5f)

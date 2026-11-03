@@ -8,6 +8,8 @@ The workshop looks cheerful. Management is not.
 
 ## Current status
 
+**Milestone 8 (menus, settings and HUD) is implemented, and its play test is pending.** The game now opens on a main menu (Play Solo, Host Co-op, Join Co-op, How to Play, Settings, Quit), has saved settings (mouse, field of view, volume, display, HUD options), an Esc pause menu, and a tidier HUD with the wish list on screen. All 56 automated PlayMode tests pass; nobody has clicked through the menus by hand yet, and both scenes need the builder re-run.
+
 **Milestone 7 (bad-part malfunctions) is implemented, and its play test is pending.** Some delivered parts now hide a defect: a leaky battery zaps whoever picks up its toy, an overwound key makes a toy run away, a wobbly wheel set makes a car drive off, and loose button eyes pop off a carried bear. Faulty parts keep their normal names, have a small visual tell, and never pass inspection. All 49 automated PlayMode tests pass; it hasn't been played by hand yet, and the Workshop scene needs the builder re-run.
 
 **Milestone 6 (more toys and wish orders) is implemented, and its play test is pending.** Alongside the wind-up robot there are now teddy bears and toy cars, and each day has a wish list of kids' orders, including **cyborg bears** (a teddy bear fitted with a robot battery and winding key). A shipped toy must exactly match an open order. All 44 automated PlayMode tests pass; it hasn't been played by hand yet, and the Workshop scene needs the builder re-run.
@@ -31,6 +33,21 @@ Milestone 2 is complete: the repair loop passed its automated tests and a develo
 | 5 — Christmas countdown | Seven days to Christmas with rising quotas and delivery waves; fail = back to day 1 | 🟨 Implemented; automated tests pass; manual play test pending |
 | 6 — More toys and orders | Bear and car; kids' wish orders such as a cyborg bear (a bear fitted with robot parts) | 🟨 Implemented; automated tests pass; manual play test pending |
 | 7 — Bad-part malfunctions | Faulty parts that make assembled toys misbehave, to catch before shipping | 🟨 Implemented; automated tests pass; manual play test pending |
+| 8 — Menus and settings | Main menu, settings, pause menu, HUD polish | 🟨 Implemented; automated tests pass; manual play test pending |
+
+### Milestone 8 verification
+
+| Check | How | Result |
+|---|---|---|
+| Scripts compile; builder makes the Main Menu and Workshop scenes, with the main menu first in the build order | Batch mode, in a copy with settings identical to the developer's project | ✅ 0 errors, 0 warnings, 0 missing scripts |
+| Earlier milestones regression | The 49 other PlayMode tests (the co-op leave test now expects the main menu) | ✅ Pass |
+| Settings are saved, clamped to their ranges, and volume applies at once | `MenuTests` | ✅ Pass |
+| Field of view reaches the player camera | `MenuTests` | ✅ Pass |
+| Main menu: Play Solo loads a solo Workshop; Host loads the Workshop and starts hosting | `MenuTests` | ✅ Pass |
+| Pause freezes solo play (the shift timer stops) and resumes; Main Menu from pause returns to the title screen unpaused | `MenuTests` | ✅ Pass |
+| Co-op Leave returns to the main menu with no error and no network manager left | `NetworkSessionTests` | ✅ Pass |
+| The on-screen wish list follows its setting | `MenuTests` | ✅ Pass |
+| Clicking every button, sliders, dropdowns, the join address box, layout at different resolutions, fullscreen/resolution in a build | Manual play test | ⬜ Pending |
 
 ### Milestone 7 verification
 
@@ -151,8 +168,15 @@ The tests call the same methods the interaction prompts call. They don't cover r
 1. Clone this repository and add its project folder in Unity Hub.
 2. Use **Unity 6000.6.7f1** (recorded in `ProjectSettings/ProjectVersion.txt`). The project uses URP, uGUI and the Input System package (Input System only) from the editor's URP Blank template, plus **Netcode for GameObjects 2.13.3** and **Multiplayer Play Mode 3.0.0**, both bundled with this editor.
 3. Let Unity import the project.
-4. **Generate the workshop scene:** run the menu **Elf & Safety → Build Workshop Scene**. This creates `Assets/_Project/Scenes/Workshop.unity` (it asks before overwriting, and offers to save unsaved scene changes), plus any toy prefabs, materials and the delivery batch asset that don't exist yet. Before overwriting, it copies the existing scene to `SceneBackups/Workshop_<date>_<time>.unity` next to `Assets/` (ignored by git, and not imported by Unity). To restore a backup, copy it back over `Assets/_Project/Scenes/Workshop.unity` while keeping that file's `.meta`. Prefabs, materials and the batch asset that already exist are never overwritten, so swapped-in art and tuned values survive a rebuild. Re-run it after pulling builder changes.
-5. Press **Play**. Play always starts in the Workshop scene, whichever scene is open (turn this off with **Elf & Safety → Always Play From Workshop**). Test Runner sessions are exempt.
+4. **Generate the scenes:** run the menu **Elf & Safety → Build Game Scenes**. This creates `Assets/_Project/Scenes/MainMenu.unity` and `Assets/_Project/Scenes/Workshop.unity` (it asks before overwriting, and offers to save unsaved scene changes), plus any toy prefabs, materials and data assets that don't exist yet, and puts the main menu first in the build order. Before overwriting, it copies each existing scene to `SceneBackups/<scene>_<date>_<time>.unity` next to `Assets/` (ignored by git, and not imported by Unity). To restore a backup, copy it back over the scene file while keeping that file's `.meta`. Prefabs, materials and the batch asset that already exist are never overwritten, so swapped-in art and tuned values survive a rebuild. Re-run it after pulling builder changes.
+5. Press **Play**. Play always starts at the main menu, like the built game, whichever scene is open (turn this off with **Elf & Safety → Always Play From Main Menu** to play the open scene directly). Test Runner sessions are exempt.
+
+### Menus and settings
+
+- **Main menu:** **Play Solo**, **Host Co-op**, **Join Co-op** (type the host's address in the box first; it's remembered), **How to Play**, **Settings**, **Quit**. If a join fails or the host leaves, you're back here with a message saying so.
+- **Pause (Esc in the Workshop):** **Resume**, **Settings**, **Main Menu** (leaves a co-op session), **Quit Game**. Solo play freezes while paused, timer included. Co-op can't be paused for everyone: the menu frees your mouse and stops your input, and the shift keeps running.
+- **Settings** (saved between sessions, from either menu): mouse sensitivity, invert mouse Y, field of view, master volume, fullscreen, resolution, graphics quality, VSync, show controls hint, show wish list on screen, and **Reset to defaults**. Fullscreen and resolution only take effect in a built game, not in the editor's game view.
+- **HUD:** a dark bar behind the day, time and wishes; today's wish list on the right; the controls hint top-left (both can be turned off in Settings); and a **Main Menu** button next to Next Day / Back to Day 1 on Santa's verdict.
 
 The builder can also run headless (it fails if the project is open in another editor):
 
@@ -182,7 +206,7 @@ Bindings are defined in code in `Assets/_Project/Scripts/Runtime/Player/PlayerIn
 | Space | Hop |
 | E or left click | Interact: pick up, place, remove part, install part, ship, press a button (including **CLOCK IN**) |
 | Q | Drop the carried item |
-| Esc | Release the mouse; click the game view to capture it again (that click doesn't interact) |
+| Esc | Pause menu (Esc again resumes, or closes Settings). Click the game view to capture the mouse again after it's been released |
 | Mouse click or R (verdict screen) | Next Day / Back to Day 1 / Play Again |
 
 ### Co-op test (two players on one PC)
@@ -190,9 +214,9 @@ Bindings are defined in code in `Assets/_Project/Scripts/Runtime/Player/PlayerIn
 Milestone 4: two elves share one workshop and one shift. Solo play is unchanged and uses no networking.
 
 1. Open **Window → Multiplayer → Multiplayer Play Mode** and tick **Player 2**. A second game window opens; give it a few seconds to load.
-2. Press **Play**. Both windows start in solo practice, with a **CO-OP TEST** line in the bottom-left corner.
-3. In the main window, press **F5** to host. In Player 2's window, click into it and press **F6** to join `127.0.0.1`. Each window removes its solo elf and spawns a networked one; the bottom-left line shows "hosting, 2 elves connected" or "joined".
-4. **F8** leaves the session, and the Workshop reloads for solo play. If the host leaves, the client returns to solo too.
+2. Press **Play**. Both windows open on the main menu.
+3. In the main window, click **Host Co-op**. In Player 2's window, check the join address says `127.0.0.1` and click **Join Co-op**. Each window loads the Workshop with a networked elf; the bottom-left line shows "hosting, 2 elves connected" or "joined".
+4. **Esc → Main Menu** leaves the session. If the host leaves, the client goes back to the main menu with "The host ended the session".
 
 What works:
 - Both elves move, and each sees the other move and look up and down.
@@ -313,16 +337,16 @@ Everything lives under `Assets/_Project/`. Runtime code is in the `ElfAndSafety.
 | `Scripts/Runtime/Toys/` | `ToyBody` (toy type, dirty state, named part slots), `ToyPart`, `ToySlotTarget` (aim target on a part mount), `ToyRecipe` (toy types, part kinds, wish orders and recipes), `ToyInspection` (shipping rules), `PartMalfunction` (what a faulty part does once installed) |
 | `Scripts/Runtime/Stations/` | `WorkStation` (work-area base class), `DeliveryChute`, `DeliveryButton`, `TestDeliveryBatch`, `SalvageBench`, `CleaningStation`, `AssemblyBench`, `ShippingChute`, `ShipmentCounter` |
 | `Scripts/Runtime/Workday/` | `WorkdayManager` (current day, shift state, timer, quota, delivery waves, the single verdict, next day and restart), `ChristmasCountdown` (the seven days' tuning), `DeliveryWave` (what one delivery contains, plus the standard Robots, Bears, Cars and Cyborg kit waves), `OrderBoard` (the WISH LIST board), `ShiftButton` (CLOCK IN), `TrapdoorSequence` (failure cutscene) |
-| `Scripts/Runtime/UI/` | `InteractionHud` (prompts, hints, status line, feedback), `WorkdayHud` (time, shipped versus quota, verdict panel and restart button) |
+| `Scripts/Runtime/UI/` | `InteractionHud` (prompts, hints, status line, feedback), `WorkdayHud` (time, wishes, on-screen wish list, controls hint, verdict panel), `MainMenu`, `PauseMenu`, `SettingsMenu` (the panel both menus use), `GameSettings` (saved settings), `GameLaunch` (moving between the menu and the Workshop, solo/host/join) |
 | `Scripts/Runtime/Core/` | `GameLayers`, `WorkshopFeedback` |
 | `Scripts/Runtime/Net/` | `NetworkSession` (Host/Join/Leave, creates and destroys the network manager), `NetworkPlayer` (networked elf, carry requests to the host), `NetworkCarryable` (syncs owner state and loose pose), `NetworkToy` (syncs dirty state and the part in each slot), `NetworkWorkshop` (shared shift, timer, count, station state and messages; Play Again for everyone) |
-| `Scripts/Editor/` | `WorkshopBuilder` (scene generation), `PlayFromWorkshop` |
+| `Scripts/Editor/` | `WorkshopBuilder` (generates both scenes, the prefabs and the UI), `PlayFromMainMenu` |
 | `Tests/` | `RobotRulesTests`, `WorkshopLoopTests`, `WorkdayTests` (PlayMode) |
 | `Prefabs/` | `Elf Player` (solo), `Elf Player (Net)` (variant used online), `Network Manager` (instantiated when hosting or joining), `Workshop Sync` (spawned by the host), toys `Robot Body`, `Teddy Bear`, `Toy Car`, parts `Battery`, `Dead Battery`, `Winding Key`, `Stuffing`, `Button Eyes`, `Wheel Set`, and the faulty `Leaky Battery`, `Overwound Winding Key`, `Wobbly Wheel Set`, `Loose Button Eyes`. The three `Placeholder *` prefabs are milestone 1 leftovers and unused |
 | `Assets/DefaultNetworkPrefabs.asset` | Netcode's own list of networked prefabs; Netcode keeps it up to date, and the network manager uses only this list |
 | `Data/` | `Christmas Countdown.asset` (the seven days: wish orders, shift length, delivery waves, Santa's notes). The old `Test Delivery Batch.asset` is deleted by the builder |
 | `Art/Materials/` | Flat-colour URP materials |
-| `Scenes/` | `Workshop.unity` (generated) |
+| `Scenes/` | `MainMenu.unity` and `Workshop.unity` (both generated) |
 
 ### Ownership model
 
@@ -404,7 +428,8 @@ Keep relevant values editable rather than scattering unexplained constants throu
 
 | Setting | What it changes | Where |
 |---|---|---|
-| Movement speed / mouse sensitivity | Player movement and camera feel | `Elf Player` prefab → First Person Controller |
+| Movement speed | Player movement | `Elf Player` prefab → First Person Controller |
+| Mouse sensitivity, invert Y, field of view, volume, display | Player preferences | In game: **Settings** (saved in PlayerPrefs); defaults in `GameSettings` |
 | Interaction reach / carry distance | How players target and transport objects | `Elf Player` prefab → Player Interactor (reach); `Hold Point` child position |
 | Cleaning duration | Cleaning workload and station bottlenecks | Workshop scene → Cleaning Station → Work Area → Clean Duration (3 s) |
 | Delivery composition | Available bodies, usable components, and repair decisions | `Data/Test Delivery Batch.asset`. Deliveries are refused if it can't complete at least two robots, or has more items than the 6 delivery-table spots |
@@ -413,7 +438,7 @@ Keep relevant values editable rather than scattering unexplained constants throu
 | Trapdoor timing | How long the failure sequence takes before Retry | Workshop scene → Room → **Trapdoor** → Trapdoor Sequence (gather 0.7 s, open 0.5 s, fall 1.3 s) |
 | Time warning | When the timer turns red | HUD → Workday Hud → Warning Seconds (30) |
 
-Values set on scene objects are regenerated by **Build Workshop Scene**; prefab and asset values are kept.
+Values set on scene objects are regenerated by **Build Game Scenes**; prefab and asset values are kept.
 
 Do not balance for four players before validating the local loop and two-player proof. Co-op tuning should consider travel, handoffs, and station congestion as well as player count.
 
@@ -444,6 +469,9 @@ Run the checks relevant to the milestone being changed. Planned-system checks be
 - **Repair and resubmit:** salvage the dead battery from a rejected robot, clean it, fit a working battery, and ship it.
 - **Second robot:** completes and ships; the counter reads 2.
 - **Ownership:** spamming E at stations and the chute can't duplicate parts, install two parts in one slot, or add credit. DEV reset mid-cleaning and while carrying a part clears everything, leaves nothing stuck in your hands, and lets a fresh batch be requested.
+- **Menus:** Play starts at the main menu. Every button works; Settings opens and Back returns; How to Play shows the controls. Join with a wrong address (e.g. 10.0.0.99) and you're back at the menu with "Couldn't connect to …".
+- **Settings:** changing mouse sensitivity, invert Y and field of view takes effect in the Workshop straight away, and survives quitting and restarting. Turning off the wish list and controls hint hides them.
+- **Pause:** Esc during a solo shift freezes the timer and toys; Esc or Resume continues with the mouse captured again. Main Menu from pause returns to the title screen.
 - **Clock in:** before clocking in, the top of the screen says PRACTICE and the timer doesn't move. Pressing E on CLOCK IN clears practice items and starts a 5:00 countdown with **Shipped 0 / 2**.
 - **During the shift:** REQUEST DELIVERY and DEV RESET show "Disabled during a scored shift". A rejected robot leaves the count unchanged.
 - **Toys:** on day 2, the bear wave arrives around 1:40. A bear takes stuffing in its belly and button eyes on its face. On day 3 the car wave arrives: wheel sets go into the front and rear wheel slots and the battery on the rear deck. The assembly bench label lists every slot and says READY: teddy bear / toy car when finished.
@@ -454,12 +482,12 @@ Run the checks relevant to the milestone being changed. Planned-system checks be
 - **Timeout:** with the quota unmet when time runs out (shorten **Shift Length Seconds** for day 1 in `Data/Christmas Countdown.asset` to test quickly), you're pulled onto the trapdoor, the doors open over an orange glow, you fall, and *"You've been reassigned to furnace operations… Back to 7 days until Christmas"* appears with **Back to Day 1**, which reloads at day 1.
 - **The whole week:** to check Christmas Eve without playing six days, temporarily set every day's quota to 1 in the countdown asset. Passing day 7 shows MERRY CHRISTMAS! and Play Again.
 - **Co-op part 1** (Multiplayer Play Mode, see [Co-op test](#co-op-test-two-players-on-one-pc)):
-  - Host with F5 and join with F6; each window shows exactly one elf of its own plus the other player's elf.
+  - Host Co-op in one window and Join Co-op in the other; each window shows exactly one elf of its own plus the other player's elf.
   - Walking and looking up and down show on the other screen.
   - The host requests a delivery; six toys appear on both screens, with installed parts on the robots.
   - Each player picks up and carries a toy; the other sees it in their hands. Both press E on the same toy at once: only one gets it, and the other's prompt doesn't offer it.
   - Dropping (Q) and placing on a station work for both, and the toy lands in the same spot on both screens.
-  - F8 on either side returns both to solo; a fresh F5/F6 works again.
+  - Esc → Main Menu on the host sends both back to the main menu (the client with "The host ended the session"); hosting and joining again works.
 - **Co-op part 2** (same setup):
   - Player 2 puts a robot on the salvage bench and removes its battery and key; the parts pop out on both screens, and pressing E again removes nothing more.
   - Player 2 drops a dirty robot in the tub; the progress bar fills on both screens and the body turns clean on both.

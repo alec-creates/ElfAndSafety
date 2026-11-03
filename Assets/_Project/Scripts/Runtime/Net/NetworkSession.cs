@@ -1,16 +1,15 @@
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
-using UnityEngine.InputSystem;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace ElfAndSafety
 {
     /// <summary>
     /// Co-op session (milestone 4). Solo play needs no networking at all: the scene has no
-    /// NetworkManager. Hosting or joining clears local practice items, removes the solo elf, and creates the
-    /// NetworkManager from a prefab; leaving (or losing the host) destroys it and reloads a solo Workshop.
+    /// NetworkManager. Hosting or joining (chosen in the main menu) clears local practice items, removes the
+    /// solo elf, and creates the NetworkManager from a prefab; leaving (or losing the host) destroys it and goes
+    /// back to the main menu.
     /// The host decides gameplay; a client only mirrors it and sends requests.
     /// </summary>
     public class NetworkSession : MonoBehaviour
@@ -24,11 +23,15 @@ namespace ElfAndSafety
         [SerializeField] InteractionHud hud;
         [SerializeField] Text statusLabel;
 
-        [Tooltip("Address a client connects to. 127.0.0.1 for a second player on this PC (Multiplayer Play Mode).")]
-        [SerializeField] string address = "127.0.0.1";
         [SerializeField] ushort port = 7777;
 
-        bool returnToSoloPending;
+        bool returnPending;
+        bool leftOnPurpose;
+        bool wasConnected;
+        bool startedAsClient;
+
+        /// <summary>Where a client connects: the address typed in the main menu (127.0.0.1 for this PC).</summary>
+        static string Address => GameLaunch.JoinAddress;
 
         public static NetworkSession Current { get; private set; }
 
@@ -52,22 +55,25 @@ namespace ElfAndSafety
             if (Current == this) Current = null;
         }
 
+        void Start()
+        {
+            // The main menu says how this Workshop should start.
+            switch (GameLaunch.TakePendingMode())
+            {
+                case LaunchMode.Host: StartHost(); break;
+                case LaunchMode.Join: StartClient(); break;
+            }
+        }
+
         void Update()
         {
-            if (returnToSoloPending)
+            if (returnPending)
             {
-                ReturnToSolo();
+                ReturnToMenu();
                 return;
             }
 
-            Keyboard keyboard = Keyboard.current;
-            if (keyboard != null)
-            {
-                if (keyboard.f5Key.wasPressedThisFrame) StartHost();
-                else if (keyboard.f6Key.wasPressedThisFrame) StartClient();
-                else if (keyboard.f8Key.wasPressedThisFrame) Leave();
-            }
-
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsConnectedClient) wasConnected = true;
             if (statusLabel != null) statusLabel.text = StatusText();
         }
 
@@ -112,15 +118,16 @@ namespace ElfAndSafety
             Destroy(soloPlayer.gameObject);
             soloPlayer = null;
 
+            startedAsClient = !asHost;
             NetworkManager manager = Instantiate(networkManagerPrefab);
-            manager.GetComponent<UnityTransport>().SetConnectionData(address, port);
+            manager.GetComponent<UnityTransport>().SetConnectionData(Address, port);
             manager.OnClientStopped += OnSessionStopped;
 
             bool started = asHost ? manager.StartHost() : manager.StartClient();
             if (!started)
             {
                 WorkshopFeedback.Problem(asHost ? "Couldn't host (is the port in use?)" : "Couldn't start the client");
-                returnToSoloPending = true;
+                returnPending = true;
                 return false;
             }
 
@@ -129,31 +136,32 @@ namespace ElfAndSafety
                 Instantiate(workshopSyncPrefab).Spawn();
             }
 
-            WorkshopFeedback.Info(asHost ? $"Hosting on port {port}. Waiting for a second elf" : $"Joining {address}:{port}...");
+            WorkshopFeedback.Info(asHost ? $"Hosting on port {port}. Waiting for a second elf" : $"Joining {Address}:{port}...");
             return true;
         }
 
-        /// <summary>Ends the session; the Workshop reloads for solo play.</summary>
+        /// <summary>Ends the session and goes back to the main menu.</summary>
         public void Leave()
         {
             if (NetworkManager.Singleton == null) return;
 
+            leftOnPurpose = true;
             if (NetworkManager.Singleton.IsListening)
             {
                 NetworkManager.Singleton.Shutdown();
             }
-            returnToSoloPending = true;
+            returnPending = true;
         }
 
         void OnSessionStopped(bool wasHost)
         {
             // Covers leaving, a failed join, and the host going away. Clean up outside the callback.
-            returnToSoloPending = true;
+            returnPending = true;
         }
 
-        void ReturnToSolo()
+        void ReturnToMenu()
         {
-            returnToSoloPending = false;
+            returnPending = false;
             NetworkManager manager = NetworkManager.Singleton;
             if (manager != null)
             {
@@ -162,7 +170,12 @@ namespace ElfAndSafety
                 Destroy(manager.gameObject);
             }
 
-            SceneManager.LoadScene(gameObject.scene.name);
+            string message = null;
+            if (!leftOnPurpose && startedAsClient)
+            {
+                message = wasConnected ? "The host ended the session" : $"Couldn't connect to {Address}";
+            }
+            GameLaunch.LoadMainMenu(message);
         }
 
         string StatusText()
@@ -170,18 +183,16 @@ namespace ElfAndSafety
             NetworkManager manager = NetworkManager.Singleton;
             if (manager == null || !manager.IsListening)
             {
-                return CanBegin(out _)
-                    ? $"CO-OP TEST   F5 Host   F6 Join {address}"
-                    : string.Empty;
+                return string.Empty;
             }
 
             if (manager.IsServer)
             {
                 int players = manager.ConnectedClientsIds.Count;
-                return $"CO-OP: hosting, {players} elf{(players == 1 ? "" : "s")} connected   F8 Leave";
+                return $"CO-OP: hosting on port {port}, {players} elf{(players == 1 ? "" : "s")} connected";
             }
 
-            return manager.IsConnectedClient ? $"CO-OP: joined {address}   F8 Leave" : $"CO-OP: connecting to {address}...   F8 Leave";
+            return manager.IsConnectedClient ? $"CO-OP: joined {Address}" : $"CO-OP: connecting to {Address}...";
         }
     }
 }

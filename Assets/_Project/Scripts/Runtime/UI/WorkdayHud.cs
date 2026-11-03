@@ -16,6 +16,11 @@ namespace ElfAndSafety
         [SerializeField] Text verdictMessage;
         [SerializeField] Button restartButton;
         [SerializeField] Text restartButtonLabel;
+        [SerializeField] Button mainMenuButton;
+        [Tooltip("Today's wish list on screen (Settings: Show wish list).")]
+        [SerializeField] Text wishListLabel;
+        [Tooltip("The controls hint (Settings: Show controls).")]
+        [SerializeField] GameObject controlsHint;
         [SerializeField] float warningSeconds = 30f;
         [SerializeField] Color normalColor = Color.white;
         [SerializeField] Color warningColor = new Color(1f, 0.4f, 0.3f);
@@ -23,11 +28,24 @@ namespace ElfAndSafety
         void Awake()
         {
             restartButton.onClick.AddListener(workday.Continue);
+            if (mainMenuButton != null) mainMenuButton.onClick.AddListener(() => GameLaunch.ReturnToMainMenu());
             verdictPanel.SetActive(false);
         }
 
         void Update()
         {
+            if (wishListLabel != null)
+            {
+                bool showList = GameSettings.ShowWishList;
+                if (wishListLabel.gameObject.activeSelf != showList) wishListLabel.gameObject.SetActive(showList);
+                if (showList) wishListLabel.text = OrderBoard.BuildText(workday);
+            }
+
+            if (controlsHint != null && controlsHint.activeSelf != GameSettings.ShowControls)
+            {
+                controlsHint.SetActive(GameSettings.ShowControls);
+            }
+
             shiftLabel.text = StatusText();
             shiftLabel.color = workday.State == ShiftState.Running && workday.RemainingSeconds <= warningSeconds ? warningColor : normalColor;
 

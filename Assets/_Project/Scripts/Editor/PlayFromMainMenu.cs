@@ -5,17 +5,17 @@ using UnityEngine.SceneManagement;
 namespace ElfAndSafety.EditorTools
 {
     /// <summary>
-    /// Makes the Play button always start in the Workshop scene, whatever scene is open for editing.
-    /// Toggle with Elf & Safety > Always Play From Workshop.
+    /// Makes the Play button always start at the main menu, like the built game, whatever scene is open for
+    /// editing. Toggle with Elf & Safety > Always Play From Main Menu (off: Play starts in the open scene).
     /// Skipped for Unity Test Runner sessions: forcing a start scene there replaces the runner's own
     /// InitTestScene, so PlayMode tests never start and the run hangs.
     /// </summary>
     [InitializeOnLoad]
-    static class PlayFromWorkshop
+    static class PlayFromMainMenu
     {
-        const string MenuPath = "Elf & Safety/Always Play From Workshop";
+        const string MenuPath = "Elf & Safety/Always Play From Main Menu";
         const string PrefKey = "ElfAndSafety.PlayFromWorkshop";
-        const string ScenePath = "Assets/_Project/Scenes/Workshop.unity";
+        const string ScenePath = "Assets/_Project/Scenes/MainMenu.unity";
         const string TestRunnerScenePrefix = "InitTestScene";
 
         static bool Enabled
@@ -24,7 +24,7 @@ namespace ElfAndSafety.EditorTools
             set => EditorPrefs.SetBool(PrefKey, value);
         }
 
-        static PlayFromWorkshop()
+        static PlayFromMainMenu()
         {
             // Decide at the moment Play is pressed, when the scene about to play is known.
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;

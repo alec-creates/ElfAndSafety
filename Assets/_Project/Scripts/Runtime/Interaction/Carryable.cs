@@ -205,6 +205,17 @@ namespace ElfAndSafety
             body.interpolation = RigidbodyInterpolation.Interpolate;
         }
 
+        /// <summary>Pushes a loose item along the ground at this horizontal velocity (a malfunctioning toy on the move).</summary>
+        internal void Nudge(Vector3 horizontalVelocity)
+        {
+            if (state != CarryState.Loose || IsMirror)
+            {
+                return;
+            }
+
+            body.linearVelocity = new Vector3(horizontalVelocity.x, body.linearVelocity.y, horizontalVelocity.z);
+        }
+
         /// <summary>Removes the object from play (shipped or reset). Safe to call more than once.</summary>
         internal void Consume()
         {

@@ -186,7 +186,7 @@ namespace ElfAndSafety.Tests
 
         ToyPart Loose(PartKind kind, bool working) => chute.SpawnedItems
             .Select(i => i.GetComponent<ToyPart>())
-            .First(p => p != null && p.Kind == kind && p.IsWorking == working && p.Carryable.State == CarryState.Loose);
+            .First(p => p != null && p.Kind == kind && p.IsWorking == working && !p.IsFaulty && p.Carryable.State == CarryState.Loose);
 
         /// <summary>Moves everything off the delivery table, then lets the next wave arrive.</summary>
         void DeliverNextWave()

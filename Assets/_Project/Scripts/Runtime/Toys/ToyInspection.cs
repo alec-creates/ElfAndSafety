@@ -5,7 +5,7 @@ namespace ElfAndSafety
 {
     /// <summary>
     /// Shipping rules: a toy passes against a recipe when it's the right toy, its body is clean, every part
-    /// the recipe needs is installed and working, and nothing else is installed.
+    /// the recipe needs is installed, working and free of defects, and nothing else is installed.
     /// </summary>
     public static class ToyInspection
     {
@@ -42,6 +42,12 @@ namespace ElfAndSafety
                 if (broken > 0)
                 {
                     problems.Add(needed == 1 ? $"{name} is {ToyRecipe.BrokenWord(kind)}" : $"{broken} {name}{(broken > 1 ? "s" : "")} {ToyRecipe.BrokenWord(kind)}");
+                }
+
+                int faulty = ofKind.Take(needed).Count(p => p.IsWorking && p.IsFaulty);
+                if (faulty > 0)
+                {
+                    problems.Add(needed == 1 ? $"{name} is faulty" : $"{faulty} {name}{(faulty > 1 ? "s" : "")} faulty");
                 }
             }
 

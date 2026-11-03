@@ -51,7 +51,12 @@ namespace ElfAndSafety.EditorTools
         }
 
         static readonly string[] ToyPrefabNames = { "Robot Body", "Teddy Bear", "Toy Car" };
-        static readonly string[] PartPrefabNames = { "Battery", "Dead Battery", "Winding Key", "Stuffing", "Button Eyes", "Wheel Set" };
+        static readonly string[] PartPrefabNames =
+        {
+            "Battery", "Dead Battery", "Winding Key", "Stuffing", "Button Eyes", "Wheel Set",
+            // Faulty parts: same names in game, a small visual tell, and a malfunction once installed.
+            "Leaky Battery", "Overwound Winding Key", "Loose Button Eyes", "Wobbly Wheel Set",
+        };
 
         [MenuItem("Elf & Safety/Build Workshop Scene")]
         public static void BuildFromMenu()
@@ -817,6 +822,29 @@ namespace ElfAndSafety.EditorTools
                 ["Stuffing"] = BuildStuffing,
                 ["Button Eyes"] = BuildButtonEyes,
                 ["Wheel Set"] = BuildWheelSet,
+                ["Leaky Battery"] = () => Faulty(() => BuildBattery("Battery", true), PartFault.Leaky, visual =>
+                {
+                    var goo = Mat("Battery Goo Green", new Color(0.45f, 1f, 0.2f), emission: new Color(0.2f, 0.6f, 0.05f));
+                    Block("Goo", visual, new Vector3(0.055f, 0.06f, 0.03f), new Vector3(0.03f, 0.05f, 0.03f), goo, PrimitiveType.Sphere);
+                    Block("Drip", visual, new Vector3(0.06f, 0.025f, 0.035f), Vector3.one * 0.018f, goo, PrimitiveType.Sphere);
+                }),
+                ["Overwound Winding Key"] = () => Faulty(BuildWindingKey, PartFault.Overwound, visual =>
+                {
+                    var rust = Mat("Rust Brown", new Color(0.55f, 0.25f, 0.1f));
+                    Block("Rust", visual, new Vector3(0f, 0.1f, 0f), new Vector3(0.046f, 0.05f, 0.046f), rust);
+                    Block("Rust Wing", visual, new Vector3(0f, 0.21f, 0.08f), new Vector3(0.032f, 0.04f, 0.04f), rust);
+                }),
+                ["Loose Button Eyes"] = () => Faulty(BuildButtonEyes, PartFault.LooseThreads, visual =>
+                {
+                    Transform eye = visual.Find("Eye Right");
+                    if (eye != null) eye.localPosition += new Vector3(0.01f, -0.02f, 0f);
+                    Block("Dangling Thread", visual, new Vector3(0.06f, -0.01f, 0f), new Vector3(0.004f, 0.06f, 0.004f), Mat("Stuffing White", Color.white));
+                }),
+                ["Wobbly Wheel Set"] = () => Faulty(BuildWheelSet, PartFault.Wobbly, visual =>
+                {
+                    Transform wheel = visual.Find("Wheel Right");
+                    if (wheel != null) wheel.localEulerAngles = new Vector3(25f, 0f, 90f);
+                }),
             };
 
             return new ToyPrefabs
@@ -1083,6 +1111,16 @@ namespace ElfAndSafety.EditorTools
             Block("Wheel Left", visual, new Vector3(-0.17f, 0.05f, 0f), new Vector3(0.1f, 0.02f, 0.1f), rubber, PrimitiveType.Cylinder, eulerAngles: new Vector3(0f, 0f, 90f));
             Block("Wheel Right", visual, new Vector3(0.17f, 0.05f, 0f), new Vector3(0.1f, 0.02f, 0.1f), rubber, PrimitiveType.Cylinder, eulerAngles: new Vector3(0f, 0f, 90f));
             return Part(root, PartKind.WheelSet, true);
+        }
+
+        /// <summary>A part with a hidden defect: the normal part, a small visual tell, and its malfunction.</summary>
+        static GameObject Faulty(Func<GameObject> buildNormal, PartFault fault, Action<Transform> addTell)
+        {
+            GameObject root = buildNormal();
+            AssignEnum(root.GetComponent<ToyPart>(), "fault", (int)fault);
+            addTell(root.transform.Find("Visual"));
+            root.AddComponent<PartMalfunction>();
+            return root;
         }
 
         static GameObject Part(GameObject root, PartKind kind, bool working)

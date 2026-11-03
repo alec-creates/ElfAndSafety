@@ -96,6 +96,7 @@ namespace ElfAndSafety
                 return false;
             }
 
+            // Dead parts are obvious; faulty ones aren't, so the prompt doesn't give them away.
             actionLabel = part.IsWorking ? $"Install {part.DisplayName}" : $"Install {part.DisplayName} (it's {ToyRecipe.BrokenWord(part.Kind)}!)";
             return true;
         }
@@ -115,7 +116,7 @@ namespace ElfAndSafety
             for (int i = 0; i < toy.SlotCount; i++)
             {
                 ToyPart part = toy.GetSlotPart(i);
-                string state = part == null ? "empty" : part.IsWorking ? "ok" : ToyRecipe.BrokenWord(part.Kind).ToUpper();
+                string state = part == null ? "empty" : part.ConditionWord;
                 text.Append($"{toy.Slots[i].name}: {state}\n");
             }
 

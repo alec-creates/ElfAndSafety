@@ -156,7 +156,7 @@ namespace ElfAndSafety.Tests
 
             workday.Tick(1.5f);
             Assert.AreEqual(2, workday.WavesDelivered, "Arrives once the table is clear");
-            Assert.AreEqual(9 + 7, chute.SpawnedItems.Count, "Day 2's second wave (two bears with one part each, three loose parts) is added, the first kept");
+            Assert.AreEqual(9 + 8, chute.SpawnedItems.Count, "Day 2's second wave (two bears with one part each, four loose parts) is added, the first kept");
             Assert.AreEqual(2, chute.SpawnedItems.Count(c => c.GetComponent<ToyBody>() != null && c.GetComponent<ToyBody>().Type == ToyType.TeddyBear));
             Assert.AreEqual(ShiftState.Running, workday.State);
         }

@@ -77,12 +77,13 @@ namespace ElfAndSafety
             foreach (PartKind kind in Enum.GetValues(typeof(PartKind)))
             {
                 int wanted = day.orders.Sum(o => o.Recipe.Count(kind));
-                int working = day.waves.Sum(w =>
-                    w.looseParts.Count(p => p.kind == kind && p.working) +
-                    w.toys.Sum(t => t.installed.Count(p => p.kind == kind && p.working)));
-                if (wanted > working)
+                // Only good parts count: dead and faulty ones are extras that never complete an order.
+                int good = day.waves.Sum(w =>
+                    w.looseParts.Count(p => p.kind == kind && p.IsGood) +
+                    w.toys.Sum(t => t.installed.Count(p => p.kind == kind && p.IsGood)));
+                if (wanted > good)
                 {
-                    reason = $"orders need {wanted} working {ToyRecipe.PartName(kind)}s but only {working} are delivered";
+                    reason = $"orders need {wanted} x good {ToyRecipe.PartName(kind)}, but only {good} are delivered";
                     return false;
                 }
             }
@@ -111,14 +112,14 @@ namespace ElfAndSafety
                 orders = { Order(OrderKind.WindUpRobot, "Noah"), Order(OrderKind.WindUpRobot, "Mia"), Order(OrderKind.TeddyBear, "Leo") },
                 shiftLengthSeconds = 300f, secondsBetweenWaves = 100f,
                 waves = { DeliveryWave.Robots(), DeliveryWave.Bears() },
-                santaNote = "Teddy bears today. Stuffing goes INSIDE the bear.",
+                santaNote = "Teddy bears today. Stuffing goes INSIDE the bear. Check those button eyes are sewn on.",
             },
             new Day
             {
                 orders = { Order(OrderKind.WindUpRobot, "Zoe"), Order(OrderKind.TeddyBear, "Sam"), Order(OrderKind.ToyCar, "Ivy") },
                 shiftLengthSeconds = 300f, secondsBetweenWaves = 90f,
                 waves = { DeliveryWave.Robots(), DeliveryWave.Bears(), DeliveryWave.Cars() },
-                santaNote = "Toy cars now. Two wheel sets each. Santa counted.",
+                santaNote = "Toy cars now. Two wheel sets each. Santa counted. Wobbly wheels go in the bin, not the car.",
             },
             new Day
             {
@@ -131,7 +132,7 @@ namespace ElfAndSafety
             {
                 orders = { Order(OrderKind.WindUpRobot, "Finn"), Order(OrderKind.WindUpRobot, "Nora"), Order(OrderKind.CyborgBear, "Jax"), Order(OrderKind.CyborgBear, "Elsie") },
                 shiftLengthSeconds = 300f, secondsBetweenWaves = 90f,
-                waves = { DeliveryWave.Robots(), DeliveryWave.CyborgKit() },
+                waves = { DeliveryWave.RiskyRobots(), DeliveryWave.CyborgKit() },
                 santaNote = "Some kids want CYBORG BEARS. Bear, stuffing, eyes, battery, key. Don't ask why.",
             },
             new Day
@@ -149,7 +150,7 @@ namespace ElfAndSafety
                     Order(OrderKind.TeddyBear, "Bea"), Order(OrderKind.CyborgBear, "Rex"), Order(OrderKind.CyborgBear, "Luna"),
                 },
                 shiftLengthSeconds = 300f, secondsBetweenWaves = 70f,
-                waves = { DeliveryWave.Robots(), DeliveryWave.Cars(), DeliveryWave.CyborgKit(), DeliveryWave.Bears() },
+                waves = { DeliveryWave.RiskyRobots(), DeliveryWave.Cars(), DeliveryWave.CyborgKit(), DeliveryWave.Bears() },
                 santaNote = "Christmas Eve. Every child. Every present. No excuses.",
             },
         };

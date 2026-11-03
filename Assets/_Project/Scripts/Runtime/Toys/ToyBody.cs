@@ -169,7 +169,7 @@ namespace ElfAndSafety
             for (int i = 0; i < SlotCount; i++)
             {
                 ToyPart part = Installed[i];
-                string state = part == null ? "empty" : part.IsWorking ? "ok" : ToyRecipe.BrokenWord(part.Kind).ToUpper();
+                string state = part == null ? "empty" : part.ConditionWord;
                 parts.Add($"{slots[i].name.ToLower()} {state}");
             }
 

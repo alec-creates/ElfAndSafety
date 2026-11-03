@@ -13,7 +13,7 @@ namespace ElfAndSafety
     {
         [Tooltip("One prefab per toy type.")]
         [SerializeField] ToyBody[] toyPrefabs;
-        [Tooltip("One prefab per part kind and condition (e.g. Battery and Dead Battery).")]
+        [Tooltip("One prefab per part kind and condition (e.g. Battery, Dead Battery, Leaky Battery).")]
         [SerializeField] ToyPart[] partPrefabs;
         [Tooltip("One per delivered item. Items drop in slightly above these and settle with physics.")]
         [SerializeField] Transform[] spawnPoints;
@@ -122,7 +122,8 @@ namespace ElfAndSafety
 
         static bool MissingPart(PartSpec part, out string reason)
         {
-            reason = $"Delivery chute has no {(part.working ? "" : ToyRecipe.BrokenWord(part.kind) + " ")}{ToyRecipe.PartName(part.kind)} prefab";
+            string condition = !part.working ? ToyRecipe.BrokenWord(part.kind) + " " : part.fault != PartFault.None ? ToyPart.TellWord(part.fault) + " " : "";
+            reason = $"Delivery chute has no {condition}{ToyRecipe.PartName(part.kind)} prefab";
             return false;
         }
 
@@ -205,7 +206,7 @@ namespace ElfAndSafety
             if (partPrefabs == null) return null;
             foreach (ToyPart prefab in partPrefabs)
             {
-                if (prefab != null && prefab.Kind == spec.kind && prefab.IsWorking == spec.working) return prefab;
+                if (prefab != null && prefab.Kind == spec.kind && prefab.IsWorking == spec.working && prefab.Fault == spec.fault) return prefab;
             }
             return null;
         }

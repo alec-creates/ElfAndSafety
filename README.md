@@ -8,6 +8,8 @@ The workshop looks cheerful. Management is not.
 
 ## Current status
 
+**Milestone 7 (bad-part malfunctions) is implemented, and its play test is pending.** Some delivered parts now hide a defect: a leaky battery zaps whoever picks up its toy, an overwound key makes a toy run away, a wobbly wheel set makes a car drive off, and loose button eyes pop off a carried bear. Faulty parts keep their normal names, have a small visual tell, and never pass inspection. All 49 automated PlayMode tests pass; it hasn't been played by hand yet, and the Workshop scene needs the builder re-run.
+
 **Milestone 6 (more toys and wish orders) is implemented, and its play test is pending.** Alongside the wind-up robot there are now teddy bears and toy cars, and each day has a wish list of kids' orders, including **cyborg bears** (a teddy bear fitted with a robot battery and winding key). A shipped toy must exactly match an open order. All 44 automated PlayMode tests pass; it hasn't been played by hand yet, and the Workshop scene needs the builder re-run.
 
 **Milestone 5 (the Christmas countdown) is implemented, and its play test is pending.** The game is now a week: seven days counting down from 7 days until Christmas to Christmas Eve, each with its own quota, shift length and delivery waves, getting harder. Pass a day to move on; fail one and it's back to day 1; survive Christmas Eve to win. All 38 automated PlayMode tests pass. It hasn't been played by hand yet, and the Workshop scene needs the builder re-run.
@@ -28,7 +30,21 @@ Milestone 2 is complete: the repair loop passed its automated tests and a develo
 | 4 — Co-op proof | Two players sharing objects and synchronized workday state | 🟨 Implemented (parts 1 and 2); automated tests pass; two-player play test pending |
 | 5 — Christmas countdown | Seven days to Christmas with rising quotas and delivery waves; fail = back to day 1 | 🟨 Implemented; automated tests pass; manual play test pending |
 | 6 — More toys and orders | Bear and car; kids' wish orders such as a cyborg bear (a bear fitted with robot parts) | 🟨 Implemented; automated tests pass; manual play test pending |
-| 7 — Bad-part malfunctions | Faulty parts that make assembled toys misbehave, to catch before shipping | ⬜ Planned |
+| 7 — Bad-part malfunctions | Faulty parts that make assembled toys misbehave, to catch before shipping | 🟨 Implemented; automated tests pass; manual play test pending |
+
+### Milestone 7 verification
+
+| Check | How | Result |
+|---|---|---|
+| Scripts compile; builder creates the Leaky Battery, Overwound Winding Key, Wobbly Wheel Set and Loose Button Eyes prefabs | Batch mode, in a copy with settings identical to the developer's project | ✅ 0 errors, 0 warnings, 0 missing scripts |
+| Earlier milestones regression | The 44 other PlayMode tests (expectations updated only for the bear wave's extra loose part) | ✅ Pass |
+| Faulty parts never count toward a day's solvability | `MalfunctionTests` | ✅ Pass |
+| The risky robot's tells (labels say leaking/rusty, the part says "looks rusty", the prompt name stays neutral) and inspection ("battery is faulty", "winding key is faulty"), including at the shipping chute | `MalfunctionTests` | ✅ Pass |
+| Overwound key: the robot runs off on its own, and stays put once the key is removed | `MalfunctionTests` | ✅ Pass |
+| Leaky battery: the toy zaps the player into dropping it; a loose leaky battery is safe to carry | `MalfunctionTests` | ✅ Pass |
+| Loose button eyes: they pop off a carried bear, which stays in hand | `MalfunctionTests` | ✅ Pass |
+| Wobbly wheel set driving a car off | Code shared with the overwound key; not separately tested | ⬜ Manual |
+| How the malfunctions feel and read in play; co-op (they run on the host) | Manual play test | ⬜ Pending |
 
 ### Milestone 6 verification
 
@@ -204,9 +220,9 @@ The game is a countdown to Christmas: day 1 is "7 days until Christmas" and day 
 | 2 | 6 days | 2 robots, 1 bear | 5:00 | Robots, Bears (every 1:40) |
 | 3 | 5 days | 1 robot, 1 bear, 1 car | 5:00 | Robots, Bears, Cars (every 1:30) |
 | 4 | 4 days | 2 bears, 2 cars | 5:00 | Bears, Cars (every 1:30) |
-| 5 | 3 days | 2 robots, 2 cyborg bears | 5:00 | Robots, Cyborg kit (every 1:30) |
+| 5 | 3 days | 2 robots, 2 cyborg bears | 5:00 | Risky robots, Cyborg kit (every 1:30) |
 | 6 | 2 days | 2 cars, 1 bear, 2 cyborg bears | 5:00 | Cars, Bears, Cyborg kit (every 1:20) |
-| 7 | Christmas Eve | 2 robots, 1 car, 1 bear, 2 cyborg bears | 5:00 | Robots, Cars, Cyborg kit, Bears (every 1:10) |
+| 7 | Christmas Eve | 2 robots, 1 car, 1 bear, 2 cyborg bears | 5:00 | Risky robots, Cars, Cyborg kit, Bears (every 1:10) |
 
 Every order has a kid's name, such as *Timmy's wind-up robot*. The **WISH LIST** board on the east wall, between the shipping chute and the reject bin, lists today's orders and ticks them off as they ship.
 
@@ -294,7 +310,7 @@ Everything lives under `Assets/_Project/`. Runtime code is in the `ElfAndSafety.
 |---|---|
 | `Scripts/Runtime/Player/` | `FirstPersonController`, `PlayerInputReader` (bindings, cursor lock) |
 | `Scripts/Runtime/Interaction/` | `PlayerInteractor` (aiming, carrying), `Carryable` (single-owner physical object), `IInteractable`, `ICarryableOwner`, `IDescribable` |
-| `Scripts/Runtime/Toys/` | `ToyBody` (toy type, dirty state, named part slots), `ToyPart`, `ToySlotTarget` (aim target on a part mount), `ToyRecipe` (toy types, part kinds, wish orders and recipes), `ToyInspection` (shipping rules) |
+| `Scripts/Runtime/Toys/` | `ToyBody` (toy type, dirty state, named part slots), `ToyPart`, `ToySlotTarget` (aim target on a part mount), `ToyRecipe` (toy types, part kinds, wish orders and recipes), `ToyInspection` (shipping rules), `PartMalfunction` (what a faulty part does once installed) |
 | `Scripts/Runtime/Stations/` | `WorkStation` (work-area base class), `DeliveryChute`, `DeliveryButton`, `TestDeliveryBatch`, `SalvageBench`, `CleaningStation`, `AssemblyBench`, `ShippingChute`, `ShipmentCounter` |
 | `Scripts/Runtime/Workday/` | `WorkdayManager` (current day, shift state, timer, quota, delivery waves, the single verdict, next day and restart), `ChristmasCountdown` (the seven days' tuning), `DeliveryWave` (what one delivery contains, plus the standard Robots, Bears, Cars and Cyborg kit waves), `OrderBoard` (the WISH LIST board), `ShiftButton` (CLOCK IN), `TrapdoorSequence` (failure cutscene) |
 | `Scripts/Runtime/UI/` | `InteractionHud` (prompts, hints, status line, feedback), `WorkdayHud` (time, shipped versus quota, verdict panel and restart button) |
@@ -302,7 +318,7 @@ Everything lives under `Assets/_Project/`. Runtime code is in the `ElfAndSafety.
 | `Scripts/Runtime/Net/` | `NetworkSession` (Host/Join/Leave, creates and destroys the network manager), `NetworkPlayer` (networked elf, carry requests to the host), `NetworkCarryable` (syncs owner state and loose pose), `NetworkToy` (syncs dirty state and the part in each slot), `NetworkWorkshop` (shared shift, timer, count, station state and messages; Play Again for everyone) |
 | `Scripts/Editor/` | `WorkshopBuilder` (scene generation), `PlayFromWorkshop` |
 | `Tests/` | `RobotRulesTests`, `WorkshopLoopTests`, `WorkdayTests` (PlayMode) |
-| `Prefabs/` | `Elf Player` (solo), `Elf Player (Net)` (variant used online), `Network Manager` (instantiated when hosting or joining), `Workshop Sync` (spawned by the host), toys `Robot Body`, `Teddy Bear`, `Toy Car`, parts `Battery`, `Dead Battery`, `Winding Key`, `Stuffing`, `Button Eyes`, `Wheel Set`. The three `Placeholder *` prefabs are milestone 1 leftovers and unused |
+| `Prefabs/` | `Elf Player` (solo), `Elf Player (Net)` (variant used online), `Network Manager` (instantiated when hosting or joining), `Workshop Sync` (spawned by the host), toys `Robot Body`, `Teddy Bear`, `Toy Car`, parts `Battery`, `Dead Battery`, `Winding Key`, `Stuffing`, `Button Eyes`, `Wheel Set`, and the faulty `Leaky Battery`, `Overwound Winding Key`, `Wobbly Wheel Set`, `Loose Button Eyes`. The three `Placeholder *` prefabs are milestone 1 leftovers and unused |
 | `Assets/DefaultNetworkPrefabs.asset` | Netcode's own list of networked prefabs; Netcode keeps it up to date, and the network manager uses only this list |
 | `Data/` | `Christmas Countdown.asset` (the seven days: wish orders, shift length, delivery waves, Santa's notes). The old `Test Delivery Batch.asset` is deleted by the builder |
 | `Art/Materials/` | Flat-colour URP materials |
@@ -340,7 +356,20 @@ Each toy prefab's root holds the rigidbody, a simple box collider and the gamepl
 |---|---|---|
 | Cyborg bear | A teddy bear | Clean, stuffing, button eyes, working battery, winding key |
 
-Parts: battery (working or dead), winding key, stuffing, button eyes, wheel set. Parts fit any toy with a matching slot, which is how a bear becomes a cyborg bear. A dead battery can be installed for diagnosis, but it won't pass inspection. Installed parts sit visibly on their mounts and move with the toy. Outside a shift (practice), a toy only has to be its ordinary finished version to ship.
+Parts: battery, winding key, stuffing, button eyes, wheel set. A part can be good, dead (batteries; obvious) or **faulty** (see below). Parts fit any toy with a matching slot, which is how a bear becomes a cyborg bear. A dead battery can be installed for diagnosis, but it won't pass inspection. Installed parts sit visibly on their mounts and move with the toy. Outside a shift (practice), a toy only has to be its ordinary finished version to ship.
+
+### Faulty parts (malfunctions)
+
+Some deliveries include parts with a hidden defect. They keep their normal names in prompts, so catch them by looking: each has a small visual tell, the look-at line says it "looks rusty / leaking / wobbly / loose", and the assembly bench and toy status show that word in place of "ok". A faulty part never passes inspection ("winding key is faulty"), and only arrives as an extra: a day's deliveries always include enough good parts for its orders.
+
+| Faulty part | Tell | Once it's in a toy | Arrives |
+|---|---|---|---|
+| Leaky battery | Green goo | Picking up the toy **zaps** you after a moment, and you drop it. Carrying the loose battery on its own is safe | Risky robots wave (days 5 and 7), fitted in the first robot |
+| Overwound winding key | Rust | Left loose for 3 seconds, the toy **runs away** in a random direction, again and again until the key is removed | Risky robots wave, fitted in the first robot |
+| Wobbly wheel set | One bent wheel | The car **drives off** on its own, like the overwound key | Cars wave, as a loose spare |
+| Loose button eyes | A dangling thread, one eye askew | Carry the bear for 2 seconds and the eyes **pop off** | Bears wave, as a loose spare |
+
+To deal with a fitted faulty part: put the toy on the salvage bench (quickly, if it's leaking), remove the part, and fit a good one. Malfunctions run where gameplay is decided (solo, or the co-op host); their results sync to the other player.
 
 ### Stations
 
@@ -359,6 +388,7 @@ These are extension guidelines. Replace them with exact file references as syste
 | I want to add… | Approach |
 |---|---|
 | A new toy | Add a `ToyType`, a recipe in `ToyRecipe`, a prefab with a `ToyBody` and one mount (with a `ToySlotTarget`) per slot, and register the prefab on the delivery chute (the builder shows how). The stations, shipping and co-op sync already work with any toy of up to 4 slots |
+| A new malfunction | Add a `PartFault` (append only), its tell word in `ToyPart.TellWord`, its behaviour in `PartMalfunction`, and a faulty prefab built from the normal part plus a visual tell (see `Faulty(...)` in the builder) |
 | A new component | Add a `PartKind` (append only, values are saved in assets), its name in `ToyRecipe.PartName`, a part prefab with a `ToyPart`, and slots for it on the toys that take it |
 | A new special order | Add an `OrderKind` and its recipe in `ToyRecipe` (like the cyborg bear), then put it on some days' wish lists |
 | A station | Reuse interaction and ownership rules; specify accepted inputs, operation, and accessible output positions |
@@ -417,6 +447,7 @@ Run the checks relevant to the milestone being changed. Planned-system checks be
 - **Clock in:** before clocking in, the top of the screen says PRACTICE and the timer doesn't move. Pressing E on CLOCK IN clears practice items and starts a 5:00 countdown with **Shipped 0 / 2**.
 - **During the shift:** REQUEST DELIVERY and DEV RESET show "Disabled during a scored shift". A rejected robot leaves the count unchanged.
 - **Toys:** on day 2, the bear wave arrives around 1:40. A bear takes stuffing in its belly and button eyes on its face. On day 3 the car wave arrives: wheel sets go into the front and rear wheel slots and the battery on the rear deck. The assembly bench label lists every slot and says READY: teddy bear / toy car when finished.
+- **Malfunctions:** on day 5, pick up the first delivered robot. It should zap you out of your hands within a second. Leave it on the floor and within a few seconds it sets off on its own. On the salvage bench, remove its battery and key, and it calms down. Its bench label shows "leaking" and "rusty". On day 2, fit the loose pair of eyes with the dangling thread to a bear and carry it: the eyes pop off. On day 3, fit the bent wheel set to a car and leave it: it drives off.
 - **Wish orders:** the WISH LIST board ticks off each order as it ships. On day 5, a plain bear is rejected with "battery is missing, winding key is missing (for …'s cyborg bear)". Fit a battery and key on its back, and it's accepted as a cyborg bear.
 - **Win a day:** filling every wish shows Santa's message, tomorrow's quota and **Next Day** at once. You can't move or interact, and the mouse is free to click the button. Next Day (click or R) puts you at the start of day 2 ("6 days until Christmas", quota 3) in practice mode, with an empty delivery table, idle stations, empty hands and Shipped 0, and the mouse captured again.
 - **Delivery waves:** on day 2, a second delivery arrives about 1:40 into the shift. If the first delivery's toys are still on the table, it waits until you clear room.

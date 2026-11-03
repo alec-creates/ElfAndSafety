@@ -78,7 +78,11 @@ namespace ElfAndSafety
             if (counter != null) counter.Changed -= OnShipmentRecorded;
         }
 
-        void Update() => Tick(Time.deltaTime);
+        void Update()
+        {
+            // On a co-op client the host runs the clock; NetworkWorkshop mirrors it here.
+            if (!NetworkSession.IsRemoteClient) Tick(Time.deltaTime);
+        }
 
         internal void Tick(float deltaTime)
         {
@@ -134,10 +138,65 @@ namespace ElfAndSafety
             return true;
         }
 
-        /// <summary>Reloads the Workshop: timer, score, delivery, stations and carried items all start fresh.</summary>
+        /// <summary>
+        /// Starts over with a fresh Workshop. Solo: reloads the scene. Co-op: reloading would end the session,
+        /// so the host resets the workshop in place for everyone (see <see cref="ResetShift"/>).
+        /// </summary>
         public void Restart()
         {
+            if (NetworkSession.IsOnline)
+            {
+                if (NetworkWorkshop.Instance != null) NetworkWorkshop.Instance.RequestRestart();
+                return;
+            }
+
             SceneManager.LoadScene(gameObject.scene.name);
+        }
+
+        /// <summary>
+        /// Co-op host: after the verdict, clear every toy, zero the count, and return to practice with
+        /// the trapdoor closed. Each player's own elf is reset when it sees the state change.
+        /// </summary>
+        internal void ResetShift()
+        {
+            if (!HasEnded)
+            {
+                return;
+            }
+
+            delivery.ClearForSession();
+            counter.ResetCount();
+            State = ShiftState.NotStarted;
+            RemainingSeconds = shiftLengthSeconds;
+            VerdictCount = 0;
+            ResetPresentation();
+        }
+
+        /// <summary>
+        /// Co-op client: the host owns the shift. Apply its state here, and play this player's own part of
+        /// the outcome (frozen controls, the trapdoor fall for this elf, the verdict screen) once.
+        /// </summary>
+        internal void ApplyMirror(ShiftState hostState, float hostRemaining)
+        {
+            RemainingSeconds = hostRemaining;
+            if (hostState == State)
+            {
+                return;
+            }
+
+            bool wasEnded = HasEnded;
+            State = hostState;
+
+            if (HasEnded)
+            {
+                VerdictCount++;
+                PresentOutcome(State == ShiftState.Succeeded);
+            }
+            else if (State == ShiftState.NotStarted && wasEnded)
+            {
+                VerdictCount = 0;
+                ResetPresentation();
+            }
         }
 
         /// <summary>Test hook: jump the clock without waiting.</summary>
@@ -154,7 +213,8 @@ namespace ElfAndSafety
 
         void OnShipmentRecorded(int shipped)
         {
-            if (State == ShiftState.Running && shipped >= quota)
+            // A client's count is only a mirror; the host decides the verdict.
+            if (!NetworkSession.IsRemoteClient && State == ShiftState.Running && shipped >= quota)
             {
                 Resolve(success: true);
             }
@@ -170,6 +230,11 @@ namespace ElfAndSafety
 
             State = success ? ShiftState.Succeeded : ShiftState.Failed;
             VerdictCount++;
+            PresentOutcome(success);
+        }
+
+        void PresentOutcome(bool success)
+        {
             FreezePlayers();
             ShiftEnded?.Invoke(State);
 
@@ -185,13 +250,42 @@ namespace ElfAndSafety
 
         IEnumerator PlayFailure()
         {
-            var player = FindAnyObjectByType<PlayerInteractor>();
+            // Each machine drops its own elf; the others see it fall through its synced position.
+            PlayerInteractor player = LocalPlayer();
             if (trapdoor != null && player != null)
             {
                 yield return trapdoor.Play(player.transform);
             }
 
             ShowVerdict(failureTitle, failureLine);
+        }
+
+        void ResetPresentation()
+        {
+            StopAllCoroutines();
+            VerdictVisible = false;
+            VerdictTitle = null;
+            VerdictMessage = null;
+            if (trapdoor != null) trapdoor.ResetDoors();
+
+            PlayerInteractor player = LocalPlayer();
+            if (player != null && player.TryGetComponent(out NetworkPlayer networkPlayer))
+            {
+                networkPlayer.ResetForNewShift();
+            }
+        }
+
+        /// <summary>The elf this machine controls: the solo elf, or the networked elf it owns.</summary>
+        static PlayerInteractor LocalPlayer()
+        {
+            foreach (var player in FindObjectsByType<PlayerInteractor>())
+            {
+                if (!player.TryGetComponent(out NetworkPlayer networkPlayer) || networkPlayer.IsOwner)
+                {
+                    return player;
+                }
+            }
+            return null;
         }
 
         void FreezePlayers()

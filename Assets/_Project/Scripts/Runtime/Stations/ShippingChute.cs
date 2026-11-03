@@ -19,7 +19,26 @@ namespace ElfAndSafety
         public string LastResult { get; private set; } = "Ship finished robots here";
         public Transform[] RejectDropPoints => rejectDropPoints;
 
-        void Start() => RefreshLabel();
+        void Start()
+        {
+            if (counter != null) counter.Changed += OnCountChanged;
+            RefreshLabel();
+        }
+
+        void OnDestroy()
+        {
+            if (counter != null) counter.Changed -= OnCountChanged;
+        }
+
+        void OnCountChanged(int shipped) => RefreshLabel();
+
+        /// <summary>Co-op client: show the host's last inspection result.</summary>
+        internal void MirrorLastResult(string result)
+        {
+            if (LastResult == result) return;
+            LastResult = result;
+            RefreshLabel();
+        }
 
         bool ShiftAllowsShipping => workday == null || workday.AcceptsShipments;
 

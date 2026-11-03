@@ -17,7 +17,16 @@ namespace ElfAndSafety
         float progress;
 
         public RobotBody Cleaning => cleaning;
-        public bool IsCleaning => cleaning != null;
+        public bool IsCleaning => cleaning != null || mirrorActive;
+
+        // Co-op client: the host runs the scrub; these mirror its progress for the bar and label.
+        bool mirrorActive;
+
+        internal void MirrorCleaning(bool active, float hostProgress)
+        {
+            mirrorActive = active;
+            progress = hostProgress;
+        }
         public float Progress => progress;
         public float CleanDuration => cleanDuration;
 
@@ -44,6 +53,13 @@ namespace ElfAndSafety
 
         void Update()
         {
+            // The host runs the scrub; a co-op client just sees the robot's clean state change.
+            if (NetworkSession.IsRemoteClient)
+            {
+                Refresh();
+                return;
+            }
+
             if (cleaning == null)
             {
                 TryStartCleaning();

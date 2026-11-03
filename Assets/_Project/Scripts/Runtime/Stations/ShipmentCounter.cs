@@ -18,6 +18,14 @@ namespace ElfAndSafety
             Changed?.Invoke(Shipped);
         }
 
+        /// <summary>Co-op client: show the host's count.</summary>
+        internal void MirrorShipped(int shipped)
+        {
+            if (Shipped == shipped) return;
+            Shipped = shipped;
+            Changed?.Invoke(Shipped);
+        }
+
         /// <summary>Clears practice shipments when a scored shift starts.</summary>
         internal void ResetCount()
         {

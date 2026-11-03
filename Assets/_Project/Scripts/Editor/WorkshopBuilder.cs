@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using Unity.Netcode;
+using Unity.Netcode.Components;
+using Unity.Netcode.Transports.UTP;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -27,6 +30,8 @@ namespace ElfAndSafety.EditorTools
         const string PrefabFolder = Root + "/Prefabs";
         const string DataFolder = Root + "/Data";
         const string BatchPath = DataFolder + "/Test Delivery Batch.asset";
+        // Netcode keeps this list up to date with every prefab that has a NetworkObject.
+        const string NetworkPrefabsPath = "Assets/DefaultNetworkPrefabs.asset";
         const string BackupFolder = "SceneBackups";
 
         // Placed and spawned items face the room: station forward points at the wall behind it.
@@ -93,6 +98,8 @@ namespace ElfAndSafety.EditorTools
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             ToyPrefabs toys = BuildToyPrefabs();
+            AddNetworkComponentsToToys();
+            toys = BuildToyPrefabs();
             TestDeliveryBatch batch = LoadOrCreateBatch();
 
             BuildLighting();
@@ -102,7 +109,13 @@ namespace ElfAndSafety.EditorTools
             DeliveryChute delivery = BuildStations(toys, batch, counter, workday);
             BuildTimeClock(workday);
             var player = BuildPlayer();
-            BuildHud(player.GetComponent<PlayerInteractor>(), workday);
+            InteractionHud hud = BuildHud(player.GetComponent<PlayerInteractor>(), workday);
+
+            GameObject netPlayer = BuildNetworkPlayerPrefab();
+            GameObject workshopSync = BuildWorkshopSyncPrefab();
+            NetworkPrefabsList networkPrefabs = BuildNetworkPrefabsList(toys, netPlayer, workshopSync);
+            NetworkManager managerPrefab = BuildNetworkManagerPrefab(netPlayer, networkPrefabs);
+            BuildNetworkSession(managerPrefab, workshopSync, player.GetComponent<PlayerInteractor>(), delivery, workday, hud);
 
             Assign(workday, "counter", counter);
             Assign(workday, "delivery", delivery);
@@ -503,7 +516,7 @@ namespace ElfAndSafety.EditorTools
             return root;
         }
 
-        static void BuildHud(PlayerInteractor player, WorkdayManager workday)
+        static InteractionHud BuildHud(PlayerInteractor player, WorkdayManager workday)
         {
             var canvasObject = new GameObject("HUD");
             var canvas = canvasObject.AddComponent<Canvas>();
@@ -542,6 +555,7 @@ namespace ElfAndSafety.EditorTools
             var eventSystem = new GameObject("EventSystem");
             eventSystem.AddComponent<EventSystem>();
             eventSystem.AddComponent<InputSystemUIInputModule>().AssignDefaultActions();
+            return hud;
         }
 
         /// <summary>Santa's verdict: a dimmed full-screen panel with a title, his line, and the restart button.</summary>
@@ -602,6 +616,171 @@ namespace ElfAndSafety.EditorTools
             var shadow = text.gameObject.AddComponent<Shadow>();
             shadow.effectDistance = new Vector2(2f, -2f);
             return text;
+        }
+
+        // ---------------------------------------------------------------- Co-op (milestone 4)
+
+        /// <summary>
+        /// Adds a NetworkObject and the sync components to the toy prefabs if they're missing, keeping
+        /// everything else (including swapped-in art). Netcode's automatic parenting is switched off:
+        /// installed parts hang under mount points, and solo play has no network session at all.
+        /// </summary>
+        static void AddNetworkComponentsToToys()
+        {
+            EnsurePrefabComponents($"{PrefabFolder}/Robot Body.prefab", disableParentSync: true, typeof(NetworkCarryable), typeof(NetworkRobot));
+            foreach (string part in new[] { "Battery", "Dead Battery", "Winding Key" })
+            {
+                EnsurePrefabComponents($"{PrefabFolder}/{part}.prefab", disableParentSync: true, typeof(NetworkCarryable));
+            }
+        }
+
+        static void EnsurePrefabComponents(string path, bool disableParentSync, params Type[] componentTypes)
+        {
+            GameObject root = PrefabUtility.LoadPrefabContents(path);
+            bool changed = false;
+
+            var networkObject = root.GetComponent<NetworkObject>();
+            if (networkObject == null)
+            {
+                networkObject = root.AddComponent<NetworkObject>();
+                changed = true;
+            }
+            if (disableParentSync && networkObject.AutoObjectParentSync)
+            {
+                networkObject.AutoObjectParentSync = false;
+                changed = true;
+            }
+
+            foreach (Type type in componentTypes)
+            {
+                if (root.GetComponent(type) == null)
+                {
+                    root.AddComponent(type);
+                    changed = true;
+                }
+            }
+
+            if (changed) PrefabUtility.SaveAsPrefabAsset(root, path);
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+
+        /// <summary>
+        /// "Elf Player (Net)": a variant of the solo elf with a NetworkObject, an owner-authoritative
+        /// NetworkTransform (position and yaw) and NetworkPlayer. Art changes to the solo elf carry over.
+        /// </summary>
+        static GameObject BuildNetworkPlayerPrefab()
+        {
+            string path = $"{PrefabFolder}/Elf Player (Net).prefab";
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (prefab == null)
+            {
+                var solo = AssetDatabase.LoadAssetAtPath<GameObject>($"{PrefabFolder}/Elf Player.prefab");
+                var instance = (GameObject)PrefabUtility.InstantiatePrefab(solo);
+                instance.name = "Elf Player (Net)";
+                instance.AddComponent<NetworkObject>();
+                var networkTransform = instance.AddComponent<NetworkTransform>();
+                networkTransform.AuthorityMode = NetworkTransform.AuthorityModes.Owner;
+                networkTransform.SyncRotAngleX = false;
+                networkTransform.SyncRotAngleZ = false;
+                networkTransform.SyncScaleX = false;
+                networkTransform.SyncScaleY = false;
+                networkTransform.SyncScaleZ = false;
+                instance.AddComponent<NetworkPlayer>();
+                prefab = PrefabUtility.SaveAsPrefabAsset(instance, path);
+                Object.DestroyImmediate(instance);
+                return prefab;
+            }
+
+            EnsurePrefabComponents(path, disableParentSync: false, typeof(NetworkTransform), typeof(NetworkPlayer));
+            return AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        }
+
+        /// <summary>"Workshop Sync": the host spawns one per session to share the shift and station state.</summary>
+        static GameObject BuildWorkshopSyncPrefab()
+        {
+            string path = $"{PrefabFolder}/Workshop Sync.prefab";
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(path) == null)
+            {
+                var temp = new GameObject("Workshop Sync");
+                temp.AddComponent<NetworkObject>();
+                temp.AddComponent<NetworkWorkshop>();
+                PrefabUtility.SaveAsPrefabAsset(temp, path);
+                Object.DestroyImmediate(temp);
+            }
+            else
+            {
+                EnsurePrefabComponents(path, disableParentSync: false, typeof(NetworkWorkshop));
+            }
+
+            return AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        }
+
+        static NetworkPrefabsList BuildNetworkPrefabsList(ToyPrefabs toys, GameObject netPlayer, GameObject workshopSync)
+        {
+            var list = AssetDatabase.LoadAssetAtPath<NetworkPrefabsList>(NetworkPrefabsPath);
+            if (list == null)
+            {
+                list = ScriptableObject.CreateInstance<NetworkPrefabsList>();
+                AssetDatabase.CreateAsset(list, NetworkPrefabsPath);
+            }
+
+            // Usually Netcode has already filled this in; make sure, in case its import step hasn't run yet.
+            foreach (GameObject prefab in new[] { netPlayer, workshopSync, toys.Robot.gameObject, toys.Battery.gameObject, toys.DeadBattery.gameObject, toys.WindingKey.gameObject })
+            {
+                if (!list.PrefabList.Any(entry => entry.Prefab == prefab))
+                {
+                    list.Add(new NetworkPrefab { Prefab = prefab });
+                }
+            }
+
+            EditorUtility.SetDirty(list);
+            return list;
+        }
+
+        /// <summary>
+        /// The NetworkManager lives in a prefab, not the scene: Netcode moves it to DontDestroyOnLoad, so a
+        /// scene copy would pile up on every restart. NetworkSession instantiates it when hosting or joining.
+        /// </summary>
+        static NetworkManager BuildNetworkManagerPrefab(GameObject netPlayer, NetworkPrefabsList prefabs)
+        {
+            string path = $"{PrefabFolder}/Network Manager.prefab";
+            bool exists = AssetDatabase.LoadAssetAtPath<GameObject>(path) != null;
+            GameObject root = exists ? PrefabUtility.LoadPrefabContents(path) : new GameObject("Network Manager");
+
+            // Explicit checks: in the editor a missing component is a "fake null" that ?? doesn't catch.
+            var transport = root.GetComponent<UnityTransport>();
+            if (transport == null) transport = root.AddComponent<UnityTransport>();
+            var manager = root.GetComponent<NetworkManager>();
+            if (manager == null) manager = root.AddComponent<NetworkManager>();
+            if (manager.NetworkConfig == null) manager.NetworkConfig = new NetworkConfig();
+
+            manager.NetworkConfig.NetworkTransport = transport;
+            manager.NetworkConfig.PlayerPrefab = netPlayer;
+            // Each machine already has the same Workshop loaded; nothing in it is networked.
+            manager.NetworkConfig.EnableSceneManagement = false;
+            // Exactly one list: a prefab registered by two lists is a duplicate-hash error at startup.
+            manager.NetworkConfig.Prefabs.NetworkPrefabsLists.Clear();
+            manager.NetworkConfig.Prefabs.NetworkPrefabsLists.Add(prefabs);
+
+            var saved = PrefabUtility.SaveAsPrefabAsset(root, path);
+            if (exists) PrefabUtility.UnloadPrefabContents(root);
+            else Object.DestroyImmediate(root);
+            return saved.GetComponent<NetworkManager>();
+        }
+
+        static void BuildNetworkSession(NetworkManager managerPrefab, GameObject workshopSync, PlayerInteractor soloPlayer, DeliveryChute delivery, WorkdayManager workday, InteractionHud hud)
+        {
+            var status = HudText(hud.transform, "Co-op Status", new Vector2(24f, 24f), 24, TextAnchor.LowerLeft, new Vector2(0f, 0f));
+            status.color = new Color(0.7f, 0.9f, 1f, 0.85f);
+
+            var session = new GameObject("Network Session").AddComponent<NetworkSession>();
+            Assign(session, "networkManagerPrefab", managerPrefab);
+            Assign(session, "workshopSyncPrefab", workshopSync.GetComponent<NetworkObject>());
+            Assign(session, "soloPlayer", soloPlayer);
+            Assign(session, "delivery", delivery);
+            Assign(session, "workday", workday);
+            Assign(session, "hud", hud);
+            Assign(session, "statusLabel", status);
         }
 
         // ---------------------------------------------------------------- Toys

@@ -32,6 +32,7 @@ namespace ElfAndSafety
 
         public Vector3 Velocity => controller.velocity;
         public Transform CameraPivot => cameraPivot;
+        public float Pitch => pitch;
 
         void Awake()
         {

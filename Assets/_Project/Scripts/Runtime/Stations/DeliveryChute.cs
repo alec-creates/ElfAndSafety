@@ -36,7 +36,12 @@ namespace ElfAndSafety
             }
         }
 
-        public bool HasActiveBatch => SpawnedItems.Count > 0;
+        /// <summary>On a co-op client the batch lives on the host, so this mirrors the host's answer.</summary>
+        public bool HasActiveBatch => NetworkSession.IsRemoteClient ? mirroredBatchOut : SpawnedItems.Count > 0;
+
+        bool mirroredBatchOut;
+
+        internal void MirrorBatchOut(bool batchOut) => mirroredBatchOut = batchOut;
 
         // Items leave play through shipping too, so keep the label current every frame (the list is tiny).
         void Update() => RefreshLabel();
@@ -176,6 +181,9 @@ namespace ElfAndSafety
             return true;
         }
 
+        /// <summary>Going online: practice items exist only on this machine, so remove them quietly.</summary>
+        internal void ClearForSession() => ClearBatch();
+
         void ClearBatch()
         {
             // Copy first: consuming items releases them from their owners, which may touch this list's items.
@@ -191,6 +199,10 @@ namespace ElfAndSafety
         T Spawn<T>(T prefab, Transform point) where T : Component
         {
             T instance = Instantiate(prefab, point.position, point.rotation);
+            if (NetworkSession.IsServer && instance.TryGetComponent(out Unity.Netcode.NetworkObject networkObject))
+            {
+                networkObject.Spawn(destroyWithScene: true);
+            }
             spawned.Add(instance.GetComponent<Carryable>());
             return instance;
         }

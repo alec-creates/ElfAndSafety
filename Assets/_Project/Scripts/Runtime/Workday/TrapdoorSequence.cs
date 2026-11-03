@@ -30,6 +30,15 @@ namespace ElfAndSafety
             if (furnaceLight != null) furnaceLight.intensity = 0f;
         }
 
+        /// <summary>Closes the doors and puts out the glow, for the next shift without reloading (co-op).</summary>
+        public void ResetDoors()
+        {
+            HasPlayed = false;
+            if (leftHinge != null) leftHinge.localRotation = Quaternion.identity;
+            if (rightHinge != null) rightHinge.localRotation = Quaternion.identity;
+            if (furnaceLight != null) furnaceLight.intensity = 0f;
+        }
+
         public IEnumerator Play(Transform player)
         {
             HasPlayed = true;

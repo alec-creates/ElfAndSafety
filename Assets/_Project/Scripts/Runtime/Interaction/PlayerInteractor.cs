@@ -25,6 +25,7 @@ namespace ElfAndSafety
 
         PlayerInputReader input;
         CharacterController body;
+        NetworkPlayer networkPlayer;
 
         public Carryable Held { get; private set; }
         public IInteractable Target { get; private set; }
@@ -43,7 +44,11 @@ namespace ElfAndSafety
         {
             input = GetComponent<PlayerInputReader>();
             body = GetComponent<CharacterController>();
+            networkPlayer = GetComponent<NetworkPlayer>();
         }
+
+        /// <summary>A co-op client asks the host instead of changing carry state itself.</summary>
+        bool ForwardToHost => NetworkSession.IsRemoteClient && networkPlayer != null;
 
         void Update()
         {
@@ -57,7 +62,9 @@ namespace ElfAndSafety
 
             if (input.InteractPressed && Target != null)
             {
-                Target.Interact(this);
+                // A co-op client asks the host to do it; the result arrives through synced state.
+                if (ForwardToHost) networkPlayer.RequestInteract(Target);
+                else Target.Interact(this);
                 UpdateTarget();
             }
             else if (input.DropPressed && Held != null)
@@ -82,6 +89,13 @@ namespace ElfAndSafety
                 return false;
             }
 
+            if (ForwardToHost)
+            {
+                // The host answers by syncing the item as held by us (or not, if someone was quicker).
+                networkPlayer.RequestPickUp(item);
+                return false;
+            }
+
             item.SetHeld(this);
             Held = item;
             return true;
@@ -90,13 +104,7 @@ namespace ElfAndSafety
         /// <summary>Sets the carried item down neatly at a station's place point. It stays a loose physics object.</summary>
         public bool RequestPlaceAt(Transform point)
         {
-            if (Held == null || point == null)
-            {
-                return false;
-            }
-
-            Held.SetLoose(point.position, point.rotation, Vector3.zero);
-            return true;
+            return point != null && Release(point.position, point.rotation, Vector3.zero);
         }
 
         public void RequestDrop()
@@ -106,9 +114,48 @@ namespace ElfAndSafety
                 return;
             }
 
-            Carryable item = Held;
             Vector3 velocity = body != null ? body.velocity : Vector3.zero;
-            item.SetLoose(ComputeHoldPosition(item), holdPoint.rotation * item.HoldRotation, velocity);
+            Release(ComputeHoldPosition(Held), holdPoint.rotation * Held.HoldRotation, velocity);
+        }
+
+        bool Release(Vector3 position, Quaternion rotation, Vector3 velocity)
+        {
+            if (Held == null)
+            {
+                return false;
+            }
+
+            if (ForwardToHost)
+            {
+                networkPlayer.RequestDrop(position, rotation, velocity);
+                return true;
+            }
+
+            return ApplyDrop(position, rotation, velocity);
+        }
+
+        /// <summary>Host side of a drop: lets go of the carried item at the given pose.</summary>
+        internal bool ApplyDrop(Vector3 position, Quaternion rotation, Vector3 velocity)
+        {
+            if (Held == null)
+            {
+                return false;
+            }
+
+            Held.SetLoose(position, rotation, velocity);
+            return true;
+        }
+
+        /// <summary>Co-op client: show this elf holding an item, because the host says so.</summary>
+        internal void MirrorHeld(Carryable item)
+        {
+            if (Held == item)
+            {
+                return;
+            }
+
+            item.SetHeld(this);
+            Held = item;
         }
 
         /// <summary>

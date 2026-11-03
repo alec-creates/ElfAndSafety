@@ -69,6 +69,12 @@ namespace ElfAndSafety
         public Vector3 HoldOffset => holdOffset;
         public Quaternion HoldRotation => Quaternion.Euler(holdRotation);
 
+        /// <summary>
+        /// Set on a co-op client: the host simulates this item, so here it never runs its own physics and
+        /// only mirrors the host's state (see NetworkCarryable).
+        /// </summary>
+        internal bool IsMirror { get; set; }
+
         void Awake()
         {
             body = GetComponent<Rigidbody>();
@@ -93,7 +99,7 @@ namespace ElfAndSafety
 
         void FixedUpdate()
         {
-            if (state == CarryState.Loose && body.position.y < respawnBelowY)
+            if (!IsMirror && state == CarryState.Loose && body.position.y < respawnBelowY)
             {
                 SetLoose(spawnPosition, spawnRotation, Vector3.zero);
             }
@@ -182,6 +188,14 @@ namespace ElfAndSafety
             state = CarryState.Loose;
             transform.SetParent(null, true);
             transform.SetPositionAndRotation(position, rotation);
+
+            if (IsMirror)
+            {
+                // A client's copy: aimable, but its movement comes from the host.
+                MakeKinematic(collidersEnabled: true);
+                return;
+            }
+
             SetCollidersEnabled(true);
             body.isKinematic = false;
             body.position = position;
@@ -211,6 +225,14 @@ namespace ElfAndSafety
 
             ReleaseOwner();
             state = CarryState.Consumed;
+
+            // In a co-op session the host despawns it, which removes it on every screen.
+            if (TryGetComponent(out Unity.Netcode.NetworkObject networkObject) && networkObject.IsSpawned)
+            {
+                networkObject.Despawn(destroy: true);
+                return;
+            }
+
             gameObject.SetActive(false);
             Destroy(gameObject);
         }

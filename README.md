@@ -8,7 +8,11 @@ The workshop looks cheerful. Management is not.
 
 ## Current status
 
-**Milestone 3 is complete.** One scored shift now wraps the milestone 2 repair loop: clock in, ship the quota before the timer runs out, and get Santa's verdict, with a trapdoor sequence on failure. All 24 automated PlayMode tests pass (milestone 2's 13, unchanged, plus 11 workday tests). The developer play-tested the win, timeout and restart paths on 2026-11-03 and reported every check passing (table below). Next up is milestone 4: the two-player networking proof.
+**Milestone 4 (two-player co-op proof) is implemented, and its two-player play test is pending.** One player hosts and a second joins. Both elves share one workshop: either player can carry toys, use every station, ship robots and clock in, and both see the same shift timer, shipped count and verdict. The host decides everything; the other player's actions are requests the host checks. All 30 automated PlayMode tests pass, but a second player joining can't be tested automatically, so the two-player checks below still need doing by hand.
+
+Part 1 (shared workshop and carrying) was tried by the developer in Multiplayer Play Mode on 2026-11-03; the one issue reported, that Player 2 couldn't salvage, was part 1's intended host-only limit, which part 2 removes.
+
+Milestone 3 is complete: one scored shift with a timer, quota, Santa's verdict and a trapdoor sequence on failure, verified by 11 automated workday tests and a developer play test on 2026-11-03 (table below).
 
 Milestone 2 is complete: the repair loop passed its automated tests and a developer play test on 2026-11-03, confirmed in the editor log (table below).
 
@@ -17,7 +21,31 @@ Milestone 2 is complete: the repair loop passed its automated tests and a develo
 | 1 — Workshop foundation | Graybox room, first-person movement, interaction targeting, pickup and drop | ✅ Complete (developer play-tested) |
 | 2 — First toy loop | Robot delivery, salvage, cleaning, assembly, shipping | ✅ Complete (automated tests and developer play test) |
 | 3 — A full workday | Timer, quota, Santa's verdict, trapdoor failure, restart | ✅ Complete (automated tests and developer play test) |
-| 4 — Co-op proof | Two players sharing objects and synchronized workday state | ⬜ Next |
+| 4 — Co-op proof | Two players sharing objects and synchronized workday state | 🟨 Implemented (parts 1 and 2); automated tests pass; two-player play test pending |
+
+### Milestone 4 part 2 verification
+
+| Check | How | Result |
+|---|---|---|
+| Scripts compile; builder adds the Workshop Sync prefab and registers it once | Batch mode, in a copy with settings identical to the developer's project | ✅ 0 errors, 0 warnings, 0 missing scripts |
+| Milestones 2 and 3 and co-op part 1 regression | The 28 other PlayMode tests | ✅ Pass |
+| Forwarded targets resolve on the host: a scene station by scene path, a robot part mount by robot plus mount path; the real station code runs; a repeated request is refused | `NetworkSessionTests` | ✅ Pass |
+| Online shift: clock in works; shift state and shipped count are published; shipping the quota wins once; Play Again resets in place while still hosting (toys despawned, count 0, elf unfrozen); a second shift starts | `NetworkSessionTests` | ✅ Pass |
+| Player 2 uses every station, ships, clocks in; both screens agree on timer, count, labels and verdict; both fall through the trapdoor on failure; Play Again from either player | Multiplayer Play Mode, by hand | ⬜ Pending; see [Co-op test](#co-op-test-two-players-on-one-pc) |
+
+### Milestone 4 part 1 verification
+
+| Check | How | Result |
+|---|---|---|
+| Netcode for GameObjects 2.13.3 and Multiplayer Play Mode 3.0.0 resolve offline (bundled with the editor) | Batch mode, in a copy with settings identical to the developer's project | ✅ |
+| Scripts compile; builder adds network components to existing toy prefabs and creates the networked elf, the network manager prefab and the session | Batch mode, same copy | ✅ 0 errors, 0 warnings, 0 missing scripts |
+| Milestones 2 and 3 regression (solo play) | The 24 existing PlayMode tests, unchanged | ✅ Pass |
+| Solo play creates no network manager | `NetworkSessionTests` | ✅ Pass |
+| Hosting clears practice items and replaces the solo elf with one networked, owned elf | `NetworkSessionTests` | ✅ Pass |
+| Host: delivered items are spawned on the network; robot slots sync the actual part; dirty state syncs; carry state follows pick up and drop; installed parts stay on their mounts | `NetworkSessionTests` | ✅ Pass |
+| Online: clocking in is refused | `NetworkSessionTests` | ✅ Pass |
+| Leaving returns to solo with no network manager left behind | `NetworkSessionTests` | ✅ Pass |
+| A second player joins, both elves move, both carry, no double-grabs, host actions show on the client | Multiplayer Play Mode, by hand | 🟨 Tried by the developer; the only issue reported was the intended part 1 host-only salvage limit. Not yet re-checked with part 2 |
 
 ### Milestone 3 verification
 
@@ -69,7 +97,7 @@ The tests call the same methods the interaction prompts call. They don't cover r
 ## Getting started
 
 1. Clone this repository and add its project folder in Unity Hub.
-2. Use **Unity 6000.6.7f1** (recorded in `ProjectSettings/ProjectVersion.txt`). The project uses URP, uGUI and the Input System package (Input System only), all from the editor's URP Blank template.
+2. Use **Unity 6000.6.7f1** (recorded in `ProjectSettings/ProjectVersion.txt`). The project uses URP, uGUI and the Input System package (Input System only) from the editor's URP Blank template, plus **Netcode for GameObjects 2.13.3** and **Multiplayer Play Mode 3.0.0**, both bundled with this editor.
 3. Let Unity import the project.
 4. **Generate the workshop scene:** run the menu **Elf & Safety → Build Workshop Scene**. This creates `Assets/_Project/Scenes/Workshop.unity` (it asks before overwriting, and offers to save unsaved scene changes), plus any toy prefabs, materials and the delivery batch asset that don't exist yet. Before overwriting, it copies the existing scene to `SceneBackups/Workshop_<date>_<time>.unity` next to `Assets/` (ignored by git, and not imported by Unity). To restore a backup, copy it back over `Assets/_Project/Scenes/Workshop.unity` while keeping that file's `.meta`. Prefabs, materials and the batch asset that already exist are never overwritten, so swapped-in art and tuned values survive a rebuild. Re-run it after pulling builder changes.
 5. Press **Play**. Play always starts in the Workshop scene, whichever scene is open (turn this off with **Elf & Safety → Always Play From Workshop**). Test Runner sessions are exempt.
@@ -104,6 +132,31 @@ Bindings are defined in code in `Assets/_Project/Scripts/Runtime/Player/PlayerIn
 | Q | Drop the carried item |
 | Esc | Release the mouse; click the game view to capture it again (that click doesn't interact) |
 | Mouse click or R (verdict screen) | Play Again / Retry |
+
+### Co-op test (two players on one PC)
+
+Milestone 4: two elves share one workshop and one shift. Solo play is unchanged and uses no networking.
+
+1. Open **Window → Multiplayer → Multiplayer Play Mode** and tick **Player 2**. A second game window opens; give it a few seconds to load.
+2. Press **Play**. Both windows start in solo practice, with a **CO-OP TEST** line in the bottom-left corner.
+3. In the main window, press **F5** to host. In Player 2's window, click into it and press **F6** to join `127.0.0.1`. Each window removes its solo elf and spawns a networked one; the bottom-left line shows "hosting, 2 elves connected" or "joined".
+4. **F8** leaves the session, and the Workshop reloads for solo play. If the host leaves, the client returns to solo too.
+
+What works:
+- Both elves move, and each sees the other move and look up and down.
+- Either player can pick up, carry, drop (Q) and place (E on a station) any loose toy. The host decides every carry, so two players can never hold the same item.
+- Either player can use everything: REQUEST DELIVERY and DEV RESET (in practice), salvage, cleaning, assembly, shipping and CLOCK IN. When Player 2 presses E, the request goes to the host, which checks it against its own state and runs the same station code. If it's no longer possible (someone else got there first), nothing happens.
+- Loose toys fall and settle with physics on the host; the other player sees their synced positions. Installed parts stay attached to their robot on both screens.
+- Both screens show the same shift timer, shipped count, cleaning progress, station labels and delivery status, and every station message appears for both players.
+- One shared verdict. On success, both players get Santa's message. On failure, each player's elf is pulled onto the trapdoor and drops into the pit, and each sees the other fall.
+- Play Again / Retry from either player resets the workshop for both without leaving the session: toys cleared, count 0, trapdoor closed, both elves back at the start in practice mode.
+
+Limits of this proof:
+- Station messages go to both players, including ones meant for the player who acted (such as "Output tray is blocked").
+- There's no client prediction, so a client's actions wait for the host's reply. That's invisible on one PC, but noticeable over a real network.
+- Shift length and quota come from the host; both machines should use the same scene settings.
+- A player who joins mid-shift isn't handled specially.
+- For a second PC on your network, set **Address** on the joining machine's **Network Session** object (Workshop scene) to the host's IP. Playing over the internet needs a relay service and is not part of this milestone.
 
 ### Playing a shift
 
@@ -162,7 +215,7 @@ Gameplay rules should remain independent of visual models. A replacement robot m
 
 ## Feature breakdown
 
-✅ complete · ⬜ planned
+✅ complete · 🟨 implemented, automated tests pass, manual play test pending · ⬜ planned
 
 | Area | Feature | Status |
 |---|---|---|
@@ -177,13 +230,14 @@ Gameplay rules should remain independent of visual models. A replacement robot m
 | Workday | Timer, quota, success, and restart (one repeatable shift) | ✅ |
 | Workday | Multiple days and progression | ⬜ |
 | Santa | Verdict messages and placeholder trapdoor punishment | ✅ |
-| Co-op | Two-player shared-object proof | ⬜ |
+| Co-op | Two-player shared workshop and carrying (part 1) | 🟨 |
+| Co-op | Shared stations, shipping and shift (part 2) | 🟨 |
 | Co-op | Expand to 2–4 players | ⬜ |
 | Art | Finished elf and workshop models | ⬜ |
 
 ## Folder layout
 
-Everything lives under `Assets/_Project/`. Runtime code is in the `ElfAndSafety.Runtime` assembly; editor tools are in the separate, editor-only `ElfAndSafety.Editor` assembly; tests are in `ElfAndSafety.Tests`. Audio and networking folders don't exist yet and will be added by their milestones.
+Everything lives under `Assets/_Project/`. Runtime code is in the `ElfAndSafety.Runtime` assembly; editor tools are in the separate, editor-only `ElfAndSafety.Editor` assembly; tests are in `ElfAndSafety.Tests`. An audio folder doesn't exist yet and will be added when sound is.
 
 | Path | Contents |
 |---|---|
@@ -194,9 +248,11 @@ Everything lives under `Assets/_Project/`. Runtime code is in the `ElfAndSafety.
 | `Scripts/Runtime/Workday/` | `WorkdayManager` (shift state, timer, quota, the single verdict, restart), `ShiftButton` (CLOCK IN), `TrapdoorSequence` (failure cutscene) |
 | `Scripts/Runtime/UI/` | `InteractionHud` (prompts, hints, status line, feedback), `WorkdayHud` (time, shipped versus quota, verdict panel and restart button) |
 | `Scripts/Runtime/Core/` | `GameLayers`, `WorkshopFeedback` |
+| `Scripts/Runtime/Net/` | `NetworkSession` (Host/Join/Leave, creates and destroys the network manager), `NetworkPlayer` (networked elf, carry requests to the host), `NetworkCarryable` (syncs owner state and loose pose), `NetworkRobot` (syncs dirty state and installed parts), `NetworkWorkshop` (shared shift, timer, count, station state and messages; Play Again for everyone) |
 | `Scripts/Editor/` | `WorkshopBuilder` (scene generation), `PlayFromWorkshop` |
 | `Tests/` | `RobotRulesTests`, `WorkshopLoopTests`, `WorkdayTests` (PlayMode) |
-| `Prefabs/` | `Elf Player`, `Robot Body`, `Battery`, `Dead Battery`, `Winding Key`. The three `Placeholder *` prefabs are milestone 1 leftovers and unused |
+| `Prefabs/` | `Elf Player` (solo), `Elf Player (Net)` (variant used online), `Network Manager` (instantiated when hosting or joining), `Workshop Sync` (spawned by the host), `Robot Body`, `Battery`, `Dead Battery`, `Winding Key`. The three `Placeholder *` prefabs are milestone 1 leftovers and unused |
+| `Assets/DefaultNetworkPrefabs.asset` | Netcode's own list of networked prefabs; Netcode keeps it up to date, and the network manager uses only this list |
 | `Data/` | `Test Delivery Batch.asset` (delivery contents) |
 | `Art/Materials/` | Flat-colour URP materials |
 | `Scenes/` | `Workshop.unity` (generated) |
@@ -218,7 +274,7 @@ Each toy prefab's root holds the rigidbody, a simple box collider and the gamepl
 - **Reliable interaction comes first.** Use stable carrying and attachment points. Loose objects can use physics, but essential crafting should not depend on unstable joints.
 - **Visuals are replaceable.** Keep simple colliders and gameplay components separate from detailed art. Primitive placeholders are enough to prove the loop.
 - **Deliveries must be solvable.** The prototype delivery includes enough usable parts for at least two finished robots. Random shortages should not accidentally make the test unwinnable.
-- **Co-op changes ownership rules.** Keep pickup, assembly, shipping, and workday changes behind clear methods suitable for host authority. The networking package is not selected here; prove two-player behavior before expanding content.
+- **Co-op changes ownership rules.** Keep pickup, assembly, shipping, and workday changes behind clear methods suitable for host authority. Netcode for GameObjects is the chosen package, with the host as the referee: a client sends requests and mirrors the results. Prove two-player behavior before expanding content.
 - **Everyone can do every job.** Fixed character classes are outside the first prototype. Players decide who sorts, cleans, assembles, and ships.
 
 ## First toy: wind-up robot
@@ -307,7 +363,21 @@ Run the checks relevant to the milestone being changed. Planned-system checks be
 - **Win:** shipping the second valid robot shows Santa's message and **Play Again** at once. You can't move or interact, and the mouse is free to click the button.
 - **Timeout:** with the quota unmet when time runs out (set Shift Length Seconds to 30 on the Workday object to test quickly), you're pulled onto the trapdoor, the doors open over an orange glow, you fall, and *"You've been reassigned to furnace operations"* appears with **Retry**.
 - **Restart:** Play Again and Retry (click or R) each return to practice mode with the timer at 5:00, Shipped 0, an empty delivery table, idle stations, empty hands and the trapdoor closed.
-- **Co-op:** two players cannot own the same object; installed parts, accepted shipments, and day state agree on both clients.
+- **Co-op part 1** (Multiplayer Play Mode, see [Co-op test](#co-op-test-two-players-on-one-pc)):
+  - Host with F5 and join with F6; each window shows exactly one elf of its own plus the other player's elf.
+  - Walking and looking up and down show on the other screen.
+  - The host requests a delivery; six toys appear on both screens, with installed parts on the robots.
+  - Each player picks up and carries a toy; the other sees it in their hands. Both press E on the same toy at once: only one gets it, and the other's prompt doesn't offer it.
+  - Dropping (Q) and placing on a station work for both, and the toy lands in the same spot on both screens.
+  - F8 on either side returns both to solo; a fresh F5/F6 works again.
+- **Co-op part 2** (same setup):
+  - Player 2 puts a robot on the salvage bench and removes its battery and key; the parts pop out on both screens, and pressing E again removes nothing more.
+  - Player 2 drops a dirty robot in the tub; the progress bar fills on both screens and the body turns clean on both.
+  - Player 2 installs parts at the assembly bench; the bench label updates on both screens.
+  - Player 2 ships a robot. A valid one raises the count on both screens; an invalid one lands in the reject bin with the reasons shown to both players.
+  - Player 2 presses CLOCK IN; the timer and Shipped 0 / 2 appear on both screens. During the shift, REQUEST DELIVERY and DEV RESET refuse for both players.
+  - Both players ship robots: the second accepted robot ends the shift once, and both see Santa's message. Play Again from Player 2 resets both into practice mode, still connected.
+  - With Shift Length Seconds set to 30 (host's Workday object), let time run out: both elves fall through the trapdoor, each sees the other fall, and Retry from either player resets both.
 
 ## Development workflow
 

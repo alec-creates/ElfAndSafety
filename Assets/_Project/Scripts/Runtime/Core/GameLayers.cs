@@ -21,7 +21,7 @@ namespace ElfAndSafety
         {
             if (Player < 0 || Carryable < 0)
             {
-                Debug.LogWarning("Elf & Safety: 'Player' or 'Carryable' layer is missing. Run Elf & Safety > Build Milestone 1 Workshop.");
+                Debug.LogWarning("Elf & Safety: 'Player' or 'Carryable' layer is missing. Run Elf & Safety > Build Workshop Scene.");
                 return;
             }
 

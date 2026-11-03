@@ -42,3 +42,6 @@ sysinfo.txt
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Workshop scene backups made by the scene builder
+/SceneBackups/

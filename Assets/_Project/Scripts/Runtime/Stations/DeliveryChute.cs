@@ -21,6 +21,8 @@ namespace ElfAndSafety
         [SerializeField] TextMesh statusLabel;
         [Tooltip("Deliveries are refused if the batch can't produce at least this many valid robots.")]
         [SerializeField] int minimumCompletableRobots = 2;
+        [Tooltip("Optional. When set, Request Delivery and DEV reset only work before the shift starts.")]
+        [SerializeField] WorkdayManager workday;
 
         readonly List<Carryable> spawned = new List<Carryable>();
 
@@ -41,15 +43,40 @@ namespace ElfAndSafety
 
         public bool CanRequestDelivery(out string reason)
         {
-            if (batch == null || robotPrefab == null || batteryPrefab == null || deadBatteryPrefab == null || windingKeyPrefab == null)
+            if (!PracticeToolsAllowed(out reason))
             {
-                reason = "Delivery chute is not set up";
                 return false;
             }
 
             if (HasActiveBatch)
             {
                 reason = "A batch is already out. Use DEV RESET for a fresh one";
+                return false;
+            }
+
+            return CanSpawnBatch(out reason);
+        }
+
+        /// <summary>DEV reset is a practice tool: refused during (and after) a scored shift.</summary>
+        public bool CanDevReset(out string reason) => PracticeToolsAllowed(out reason);
+
+        bool PracticeToolsAllowed(out string reason)
+        {
+            if (workday == null || workday.PracticeToolsAllowed)
+            {
+                reason = null;
+                return true;
+            }
+
+            reason = workday.State == ShiftState.Running ? "Disabled during a scored shift" : "The shift is over";
+            return false;
+        }
+
+        bool CanSpawnBatch(out string reason)
+        {
+            if (batch == null || robotPrefab == null || batteryPrefab == null || deadBatteryPrefab == null || windingKeyPrefab == null)
+            {
+                reason = "Delivery chute is not set up";
                 return false;
             }
 
@@ -84,6 +111,28 @@ namespace ElfAndSafety
                 return false;
             }
 
+            SpawnBatch();
+            return true;
+        }
+
+        /// <summary>
+        /// Shift start: clears whatever practice items are around and delivers the one batch for the shift.
+        /// Bypasses the practice-only gate, which is about to close.
+        /// </summary>
+        internal bool DeliverForShift(out string reason)
+        {
+            ClearBatch();
+            if (!CanSpawnBatch(out reason))
+            {
+                return false;
+            }
+
+            SpawnBatch();
+            return true;
+        }
+
+        void SpawnBatch()
+        {
             int next = 0;
             foreach (TestDeliveryBatch.RobotEntry entry in batch.robots)
             {
@@ -108,11 +157,26 @@ namespace ElfAndSafety
 
             WorkshopFeedback.Info("Delivery! Broken robots on the delivery table");
             RefreshLabel();
+        }
+
+        /// <summary>
+        /// Development action: removes every item from the current batch so a new one can be requested.
+        /// Refused during a scored shift so it can't be used to replenish parts.
+        /// </summary>
+        public bool ResetTestBatch()
+        {
+            if (!CanDevReset(out string reason))
+            {
+                WorkshopFeedback.Problem($"DEV reset: {reason}");
+                return false;
+            }
+
+            ClearBatch();
+            WorkshopFeedback.Info("DEV: test batch cleared");
             return true;
         }
 
-        /// <summary>Development action: removes every item from the current batch so a new one can be requested.</summary>
-        public void ResetTestBatch()
+        void ClearBatch()
         {
             // Copy first: consuming items releases them from their owners, which may touch this list's items.
             foreach (Carryable item in new List<Carryable>(SpawnedItems))
@@ -121,7 +185,6 @@ namespace ElfAndSafety
             }
 
             spawned.Clear();
-            WorkshopFeedback.Info("DEV: test batch cleared");
             RefreshLabel();
         }
 

@@ -8,14 +8,38 @@ The workshop looks cheerful. Management is not.
 
 ## Current status
 
-**Milestone 2 is complete.** The repair loop passes 13 automated PlayMode tests and was play-tested by the developer on 2026-11-03; every check passed and the editor log confirms each one (table below). Next up is milestone 3: the workday timer, quota and Santa's verdict.
+**Milestone 3 is complete.** One scored shift now wraps the milestone 2 repair loop: clock in, ship the quota before the timer runs out, and get Santa's verdict, with a trapdoor sequence on failure. All 24 automated PlayMode tests pass (milestone 2's 13, unchanged, plus 11 workday tests). The developer play-tested the win, timeout and restart paths on 2026-11-03 and reported every check passing (table below). Next up is milestone 4: the two-player networking proof.
+
+Milestone 2 is complete: the repair loop passed its automated tests and a developer play test on 2026-11-03, confirmed in the editor log (table below).
 
 | Milestone | Scope | Status |
 |---|---|---|
 | 1 — Workshop foundation | Graybox room, first-person movement, interaction targeting, pickup and drop | ✅ Complete (developer play-tested) |
 | 2 — First toy loop | Robot delivery, salvage, cleaning, assembly, shipping | ✅ Complete (automated tests and developer play test) |
-| 3 — A full workday | Timer, quota, Santa's verdict, trapdoor failure, restart | ⬜ Next |
-| 4 — Co-op proof | Two players sharing objects and synchronized workday state | ⬜ Planned |
+| 3 — A full workday | Timer, quota, Santa's verdict, trapdoor failure, restart | ✅ Complete (automated tests and developer play test) |
+| 4 — Co-op proof | Two players sharing objects and synchronized workday state | ⬜ Next |
+
+### Milestone 3 verification
+
+| Check | How | Result |
+|---|---|---|
+| Scripts compile; builder generates the new scene | Batch mode, in a copy with settings identical to the developer's project | ✅ 0 errors, 0 warnings, 0 missing scripts |
+| Milestone 2 regression | The 13 existing PlayMode tests, unchanged | ✅ Pass |
+| Defaults: 5:00, quota 2, timer stopped before clocking in | `WorkdayTests` | ✅ Pass |
+| Clocking in clears practice items (including one in hand), zeroes the count and delivers one fresh batch | `WorkdayTests` | ✅ Pass |
+| Request Delivery and DEV reset refused during the shift, even after every robot is gone | `WorkdayTests` | ✅ Pass |
+| Rejected robots earn zero credit | `WorkdayTests` (all three delivered robots rejected) | ✅ Pass |
+| Win: shipping the quota succeeds once; interactions, shipping and DEV reset stop | `WorkdayTests` | ✅ Pass |
+| Timeout: fails once, trapdoor drops the player, then Retry with the furnace line | `WorkdayTests` | ✅ Pass |
+| Deadline frame, quota shipment first: one verdict (success) | `WorkdayTests` | ✅ Pass |
+| Deadline frame, timer first: the late shipment is refused, one verdict (failure) | `WorkdayTests` | ✅ Pass |
+| Play Again and Retry each reload a fresh Workshop: timer, count, delivery, stations, carried item, trapdoor | `WorkdayTests` | ✅ Pass |
+| Builder run in the developer's project | Menu, in the open editor | ✅ Scene rebuilt (previous scene backed up) |
+| Clock in, then win by shipping 2 | Developer play test; editor log | ✅ Reported passing; the log shows "Shift started! Ship 2 robots in 5:00", then 1 and 2 shipped |
+| Play Again returns to practice mode | Developer play test; editor log | ✅ Reported passing; the log shows practice deliveries and DEV resets working afterwards (only possible after a fresh reload), then a second clock-in |
+| Timeout, trapdoor sequence, Retry | Developer play test; editor log | ✅ Reported passing; the log shows a 10-second shift starting. The verdict, fall and Retry write no log line, so the developer's report is the evidence |
+| Delivery and DEV reset refused during a shift | Developer play test | ✅ Reported passing (prompt-only, so nothing is logged) |
+| Rejected robot during a scored shift earns nothing | Developer play test; `WorkdayTests` | ✅ Reported passing and covered by the automated test; no rejection appears in the logged shift sessions |
 
 ### Milestone 2 verification
 
@@ -36,7 +60,7 @@ The workshop looks cheerful. Management is not.
 | Dead-battery rejection | Developer play test; editor log | ✅ Log shows "body is dirty, battery is dead" rejection |
 | Repair a rejected robot and resubmit; second robot shipped | Developer play test; editor log | ✅ Log shows the rejected robot's dead battery salvaged, the body cleaned, then 1 and 2 shipped |
 | DEV reset keeps ownership and counter consistent | Developer play test; editor log | ✅ Two resets, each followed by a fresh delivery that spawned; no exceptions |
-| Installing a dead battery at the assembly bench (warning shown) | Code path only | ⬜ Not exercised by tests or the play test so far; low risk, worth a look next session |
+| Installing a dead battery at the assembly bench (warning shown) | Developer play test; editor log | ✅ Log shows "Installed Dead Battery. It's dead, so inspection will reject it" |
 
 The tests call the same methods the interaction prompts call. They don't cover raycast aiming, prompt text, how attached parts look, or input. Every station posts a `[Workshop]` line to the Console, which is how the log evidence above was gathered.
 
@@ -76,9 +100,21 @@ Bindings are defined in code in `Assets/_Project/Scripts/Runtime/Player/PlayerIn
 | Mouse | Look |
 | Left Shift | Sprint |
 | Space | Hop |
-| E or left click | Interact: pick up, place, remove part, install part, ship, press a button |
+| E or left click | Interact: pick up, place, remove part, install part, ship, press a button (including **CLOCK IN**) |
 | Q | Drop the carried item |
 | Esc | Release the mouse; click the game view to capture it again (that click doesn't interact) |
+| Mouse click or R (verdict screen) | Play Again / Retry |
+
+### Playing a shift
+
+1. You spawn in **practice mode**. Everything works but nothing counts, and the top of the screen says so. Look around, or try the loop with **REQUEST DELIVERY**.
+2. Press E on the green **CLOCK IN** button on the red post just ahead and to the left of where you spawn. This removes any practice items (even one in your hands), sets the count to 0, drops the shift's batch onto the delivery table and starts the timer. The top of the screen shows the time left and **Shipped N / quota**; the time turns red under 30 seconds.
+3. Repair and ship robots as described below. Only accepted shipments count; rejected robots earn nothing. During the shift, Request Delivery and DEV reset are refused, so the one batch is all you get. It always contains enough parts for exactly two robots.
+4. **Reach the quota:** the shift ends at once. Santa congratulates you, with a **Play Again** button.
+5. **Run out of time:** you're pulled onto the trapdoor in front of Santa's window, the doors swing open over an orange glow, and you drop into the furnace pit. Then *"You've been reassigned to furnace operations"* appears with **Retry**.
+6. Once the shift ends, nothing can be picked up or shipped. Click the button or press **R** to reload a fresh Workshop: timer, count, delivery, stations and carried items all reset.
+
+The deadline is strict. The timer is checked before player actions each frame, so a robot shipped in the very frame time runs out doesn't count, and there's only ever one verdict.
 
 ### Playing the repair loop
 
@@ -88,8 +124,8 @@ Every robot and part is a normal physics object: drop it anywhere with Q, knock 
 2. **Salvage:** put a robot on the salvage bench, then with empty hands aim at its battery or key and press E to remove it. Removed parts pop out loose onto the green parts tray (or into your hands if the tray spots are blocked).
 3. **Clean:** put a dirty robot in the blue tub. Once it comes to rest, the station holds it upright and scrubs it for 3 seconds with a progress bar, then lets go. It can't be taken mid-scrub.
 4. **Assemble:** put a robot on the assembly bench, carry a battery or key to it, aim at the robot or bench and press E to install it. The label lists the body, battery and key status.
-5. **Ship:** carry a finished robot to the shipping chute and press E. Valid robots count once (top-right counter). Invalid ones are dumped into the red-banded **Reject Bin** with the reasons.
-6. The red **DEV: RESET TEST BATCH** button removes every delivered item, wherever it is, so you can request a fresh batch. The shipped counter is kept.
+5. **Ship:** carry a finished robot to the shipping chute and press E. Valid robots count once (the shipped count at the top of the screen). Invalid ones are dumped into the red-banded **Reject Bin** with the reasons.
+6. The red **DEV: RESET TEST BATCH** button removes every delivered item, wherever it is, so you can request a fresh batch. The shipped counter is kept. It only works in practice mode, before clocking in.
 
 Looking at a robot or part shows its status under the crosshair. Every station message is also written to the Console with a `[Workshop]` prefix.
 
@@ -138,15 +174,16 @@ Gameplay rules should remain independent of visual models. A replacement robot m
 | Cleaning | Clean dirty bodies with visible progress | ✅ |
 | Assembly | Attach battery and winding key to a robot body | ✅ |
 | Shipping | Validate finished toys and award credit once | ✅ |
-| Workday | Timer, quota, success, and next day | ⬜ |
-| Santa | Inspection messages and cartoon trapdoor punishment | ⬜ |
+| Workday | Timer, quota, success, and restart (one repeatable shift) | ✅ |
+| Workday | Multiple days and progression | ⬜ |
+| Santa | Verdict messages and placeholder trapdoor punishment | ✅ |
 | Co-op | Two-player shared-object proof | ⬜ |
 | Co-op | Expand to 2–4 players | ⬜ |
 | Art | Finished elf and workshop models | ⬜ |
 
 ## Folder layout
 
-Everything lives under `Assets/_Project/`. Runtime code is in the `ElfAndSafety.Runtime` assembly; editor tools are in the separate, editor-only `ElfAndSafety.Editor` assembly; tests are in `ElfAndSafety.Tests`. Workday, audio and networking folders don't exist yet and will be added by their milestones.
+Everything lives under `Assets/_Project/`. Runtime code is in the `ElfAndSafety.Runtime` assembly; editor tools are in the separate, editor-only `ElfAndSafety.Editor` assembly; tests are in `ElfAndSafety.Tests`. Audio and networking folders don't exist yet and will be added by their milestones.
 
 | Path | Contents |
 |---|---|
@@ -154,10 +191,11 @@ Everything lives under `Assets/_Project/`. Runtime code is in the `ElfAndSafety.
 | `Scripts/Runtime/Interaction/` | `PlayerInteractor` (aiming, carrying), `Carryable` (single-owner physical object), `IInteractable`, `ICarryableOwner`, `IDescribable` |
 | `Scripts/Runtime/Toys/` | `RobotBody` (dirty state, battery and key slots), `RobotPart`, `RobotSlotTarget` (aim target on a part mount), `RobotInspection` (shipping rules) |
 | `Scripts/Runtime/Stations/` | `WorkStation` (work-area base class), `DeliveryChute`, `DeliveryButton`, `TestDeliveryBatch`, `SalvageBench`, `CleaningStation`, `AssemblyBench`, `ShippingChute`, `ShipmentCounter` |
-| `Scripts/Runtime/UI/` | `InteractionHud` (prompts, hints, status line, feedback, shipped count) |
+| `Scripts/Runtime/Workday/` | `WorkdayManager` (shift state, timer, quota, the single verdict, restart), `ShiftButton` (CLOCK IN), `TrapdoorSequence` (failure cutscene) |
+| `Scripts/Runtime/UI/` | `InteractionHud` (prompts, hints, status line, feedback), `WorkdayHud` (time, shipped versus quota, verdict panel and restart button) |
 | `Scripts/Runtime/Core/` | `GameLayers`, `WorkshopFeedback` |
 | `Scripts/Editor/` | `WorkshopBuilder` (scene generation), `PlayFromWorkshop` |
-| `Tests/` | `RobotRulesTests`, `WorkshopLoopTests` (PlayMode) |
+| `Tests/` | `RobotRulesTests`, `WorkshopLoopTests`, `WorkdayTests` (PlayMode) |
 | `Prefabs/` | `Elf Player`, `Robot Body`, `Battery`, `Dead Battery`, `Winding Key`. The three `Placeholder *` prefabs are milestone 1 leftovers and unused |
 | `Data/` | `Test Delivery Batch.asset` (delivery contents) |
 | `Art/Materials/` | Flat-colour URP materials |
@@ -228,8 +266,10 @@ Keep relevant values editable rather than scattering unexplained constants throu
 | Interaction reach / carry distance | How players target and transport objects | `Elf Player` prefab → Player Interactor (reach); `Hold Point` child position |
 | Cleaning duration | Cleaning workload and station bottlenecks | Workshop scene → Cleaning Station → Work Area → Clean Duration (3 s) |
 | Delivery composition | Available bodies, usable components, and repair decisions | `Data/Test Delivery Batch.asset`. Deliveries are refused if it can't complete at least two robots, or has more items than the 6 delivery-table spots |
-| Day length / quota | Production pressure and win conditions | Milestone 3 |
-| Inspection duration | How quickly players return to the next attempt | Milestone 3 |
+| Shift length / quota | Production pressure and win conditions | Workshop scene → **Workday** object → Workday Manager → **Shift Length Seconds** (300) and **Quota** (2) |
+| Santa's lines | Verdict titles and messages | Workday Manager → Santa section |
+| Trapdoor timing | How long the failure sequence takes before Retry | Workshop scene → Room → **Trapdoor** → Trapdoor Sequence (gather 0.7 s, open 0.5 s, fall 1.3 s) |
+| Time warning | When the timer turns red | HUD → Workday Hud → Warning Seconds (30) |
 
 Values set on scene objects are regenerated by **Build Workshop Scene**; prefab and asset values are kept.
 
@@ -262,7 +302,11 @@ Run the checks relevant to the milestone being changed. Planned-system checks be
 - **Repair and resubmit:** salvage the dead battery from a rejected robot, clean it, fit a working battery, and ship it.
 - **Second robot:** completes and ships; the counter reads 2.
 - **Ownership:** spamming E at stations and the chute can't duplicate parts, install two parts in one slot, or add credit. DEV reset mid-cleaning and while carrying a part clears everything, leaves nothing stuck in your hands, and lets a fresh batch be requested.
-- **Workday:** success and timeout produce the correct verdict; restart clears previous day state.
+- **Clock in:** before clocking in, the top of the screen says PRACTICE and the timer doesn't move. Pressing E on CLOCK IN clears practice items and starts a 5:00 countdown with **Shipped 0 / 2**.
+- **During the shift:** REQUEST DELIVERY and DEV RESET show "Disabled during a scored shift". A rejected robot leaves the count unchanged.
+- **Win:** shipping the second valid robot shows Santa's message and **Play Again** at once. You can't move or interact, and the mouse is free to click the button.
+- **Timeout:** with the quota unmet when time runs out (set Shift Length Seconds to 30 on the Workday object to test quickly), you're pulled onto the trapdoor, the doors open over an orange glow, you fall, and *"You've been reassigned to furnace operations"* appears with **Retry**.
+- **Restart:** Play Again and Retry (click or R) each return to practice mode with the timer at 5:00, Shipped 0, an empty delivery table, idle stations, empty hands and the trapdoor closed.
 - **Co-op:** two players cannot own the same object; installed parts, accepted shipments, and day state agree on both clients.
 
 ## Development workflow

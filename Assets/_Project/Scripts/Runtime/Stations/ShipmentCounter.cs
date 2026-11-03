@@ -17,5 +17,12 @@ namespace ElfAndSafety
             Shipped++;
             Changed?.Invoke(Shipped);
         }
+
+        /// <summary>Clears practice shipments when a scored shift starts.</summary>
+        internal void ResetCount()
+        {
+            Shipped = 0;
+            Changed?.Invoke(Shipped);
+        }
     }
 }

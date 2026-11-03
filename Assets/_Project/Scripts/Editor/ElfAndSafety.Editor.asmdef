@@ -3,7 +3,8 @@
     "rootNamespace": "ElfAndSafety.EditorTools",
     "references": [
         "ElfAndSafety.Runtime",
-        "UnityEngine.UI"
+        "UnityEngine.UI",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [
         "Editor"

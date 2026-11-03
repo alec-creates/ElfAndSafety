@@ -20,6 +20,9 @@ namespace ElfAndSafety
 
         bool swallowClickThisFrame;
 
+        /// <summary>Turn off while a menu needs the mouse (the verdict screen), so clicks don't recapture it.</summary>
+        public bool AllowCursorCapture { get; set; } = true;
+
         public bool HasFocus => Cursor.lockState == CursorLockMode.Locked;
         public Vector2 Move => HasFocus ? moveAction.ReadValue<Vector2>() : Vector2.zero;
         public Vector2 Look => HasFocus ? lookAction.ReadValue<Vector2>() : Vector2.zero;
@@ -84,7 +87,7 @@ namespace ElfAndSafety
             {
                 LockCursor(false);
             }
-            else if (!HasFocus && Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+            else if (!HasFocus && AllowCursorCapture && Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
                 LockCursor(true);
                 swallowClickThisFrame = true;

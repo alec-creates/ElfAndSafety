@@ -17,6 +17,12 @@ namespace ElfAndSafety
         {
             if (action == ButtonAction.DevResetBatch)
             {
+                if (!chute.CanDevReset(out string resetBlocked))
+                {
+                    actionLabel = $"DEV reset: {resetBlocked}";
+                    return false;
+                }
+
                 actionLabel = "DEV: Reset test batch (removes all delivered toys)";
                 return true;
             }

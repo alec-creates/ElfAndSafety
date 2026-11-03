@@ -31,6 +31,7 @@ namespace ElfAndSafety
         public bool MovementEnabled { get; set; } = true;
 
         public Vector3 Velocity => controller.velocity;
+        public Transform CameraPivot => cameraPivot;
 
         void Awake()
         {
@@ -46,7 +47,11 @@ namespace ElfAndSafety
                 UpdateLook();
             }
 
-            UpdateMovement();
+            // A cutscene (the trapdoor) may switch the controller off and move the player itself.
+            if (controller.enabled)
+            {
+                UpdateMovement();
+            }
         }
 
         void UpdateLook()

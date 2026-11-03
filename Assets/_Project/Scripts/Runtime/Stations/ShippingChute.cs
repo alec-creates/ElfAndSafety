@@ -10,6 +10,8 @@ namespace ElfAndSafety
     public class ShippingChute : MonoBehaviour, IInteractable
     {
         [SerializeField] ShipmentCounter counter;
+        [Tooltip("Optional. When set, shipping stops once the shift has ended.")]
+        [SerializeField] WorkdayManager workday;
         [SerializeField] Transform[] rejectDropPoints;
         [SerializeField] float rejectClearance = 0.2f;
         [SerializeField] TextMesh statusLabel;
@@ -19,8 +21,16 @@ namespace ElfAndSafety
 
         void Start() => RefreshLabel();
 
+        bool ShiftAllowsShipping => workday == null || workday.AcceptsShipments;
+
         public bool CanInteract(PlayerInteractor player, out string actionLabel)
         {
+            if (!ShiftAllowsShipping)
+            {
+                actionLabel = "The shift is over";
+                return false;
+            }
+
             if (player.Held == null)
             {
                 actionLabel = "Bring a finished robot to ship";
@@ -43,7 +53,7 @@ namespace ElfAndSafety
         public bool TrySubmit(PlayerInteractor player)
         {
             RobotBody robot = player.Held != null ? player.Held.GetComponent<RobotBody>() : null;
-            if (robot == null || robot.Carryable.State != CarryState.Held)
+            if (robot == null || robot.Carryable.State != CarryState.Held || !ShiftAllowsShipping)
             {
                 return false;
             }

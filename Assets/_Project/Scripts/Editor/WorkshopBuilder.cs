@@ -5,6 +5,8 @@ using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.Rendering;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
@@ -94,11 +96,17 @@ namespace ElfAndSafety.EditorTools
             TestDeliveryBatch batch = LoadOrCreateBatch();
 
             BuildLighting();
-            BuildRoom();
+            TrapdoorSequence trapdoor = BuildRoom();
             var counter = new GameObject("Shipment Counter").AddComponent<ShipmentCounter>();
-            BuildStations(toys, batch, counter);
+            var workday = new GameObject("Workday").AddComponent<WorkdayManager>();
+            DeliveryChute delivery = BuildStations(toys, batch, counter, workday);
+            BuildTimeClock(workday);
             var player = BuildPlayer();
-            BuildHud(player.GetComponent<PlayerInteractor>(), counter);
+            BuildHud(player.GetComponent<PlayerInteractor>(), workday);
+
+            Assign(workday, "counter", counter);
+            Assign(workday, "delivery", delivery);
+            Assign(workday, "trapdoor", trapdoor);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             AddSceneToBuildSettings(ScenePath);
@@ -156,14 +164,18 @@ namespace ElfAndSafety.EditorTools
             }
         }
 
-        static void BuildRoom()
+        static TrapdoorSequence BuildRoom()
         {
             var room = new GameObject("Room").transform;
             var wood = Mat("Floor Wood", new Color(0.55f, 0.36f, 0.22f));
             var brick = Mat("Wall Brick", new Color(0.55f, 0.18f, 0.16f));
             var trim = Mat("Wall Trim Green", new Color(0.12f, 0.38f, 0.22f));
 
-            Block("Floor", room, new Vector3(0f, -0.1f, 0f), new Vector3(16f, 0.2f, 12f), wood, keepCollider: true);
+            // Floor in four pieces around the trapdoor hole (x -1.3..1.3, z -3.8..-1.2).
+            Block("Floor North", room, new Vector3(0f, -0.1f, 2.4f), new Vector3(16f, 0.2f, 7.2f), wood, keepCollider: true);
+            Block("Floor South", room, new Vector3(0f, -0.1f, -4.9f), new Vector3(16f, 0.2f, 2.2f), wood, keepCollider: true);
+            Block("Floor West", room, new Vector3(-4.65f, -0.1f, -2.5f), new Vector3(6.7f, 0.2f, 2.6f), wood, keepCollider: true);
+            Block("Floor East", room, new Vector3(4.65f, -0.1f, -2.5f), new Vector3(6.7f, 0.2f, 2.6f), wood, keepCollider: true);
             Block("Wall North", room, new Vector3(0f, 2f, 6.2f), new Vector3(16.8f, 4f, 0.4f), brick, keepCollider: true);
             Block("Wall South", room, new Vector3(0f, 2f, -6.2f), new Vector3(16.8f, 4f, 0.4f), brick, keepCollider: true);
             Block("Wall East", room, new Vector3(8.2f, 2f, 0f), new Vector3(0.4f, 4f, 12f), brick, keepCollider: true);
@@ -175,14 +187,7 @@ namespace ElfAndSafety.EditorTools
             Block("Trim East", room, new Vector3(7.98f, 0.3f, 0f), new Vector3(0.05f, 0.6f, 12f), trim);
             Block("Trim West", room, new Vector3(-7.98f, 0.3f, 0f), new Vector3(0.05f, 0.6f, 12f), trim);
 
-            // Trapdoor in front of Santa's window. Milestone 3 makes it open.
-            var trapdoor = new GameObject("Trapdoor").transform;
-            trapdoor.SetParent(room, false);
-            trapdoor.localPosition = new Vector3(0f, 0.005f, -2.5f);
-            Block("Hazard Border", trapdoor, Vector3.zero, new Vector3(3f, 0.01f, 3f), Mat("Hazard Yellow", new Color(0.98f, 0.78f, 0.1f)));
-            Block("Panel", trapdoor, new Vector3(0f, 0.005f, 0f), new Vector3(2.6f, 0.01f, 2.6f), Mat("Hazard Black", new Color(0.08f, 0.08f, 0.09f)));
-            Block("Seam", trapdoor, new Vector3(0f, 0.01f, 0f), new Vector3(0.05f, 0.01f, 2.6f), Mat("Hazard Yellow", Color.yellow));
-            Label(trapdoor, "PERFORMANCE REVIEW AREA", new Vector3(0f, 0.03f, 0f), Quaternion.Euler(90f, 0f, 0f), 0.05f, new Color(1f, 0.8f, 0.1f));
+            TrapdoorSequence trapdoor = BuildTrapdoor(room);
 
             // Santa's office window on the south wall.
             var office = new GameObject("Santa's Office Window").transform;
@@ -197,11 +202,99 @@ namespace ElfAndSafety.EditorTools
             var posts = Mat("Hazard Yellow", Color.yellow);
             Block("Hazard Post", room, new Vector3(-1.9f, 0.5f, -1.2f), new Vector3(0.15f, 1f, 0.15f), posts, PrimitiveType.Cylinder, keepCollider: true);
             Block("Hazard Post", room, new Vector3(1.9f, 0.5f, -1.2f), new Vector3(0.15f, 1f, 0.15f), posts, PrimitiveType.Cylinder, keepCollider: true);
+            return trapdoor;
+        }
+
+        /// <summary>
+        /// Two hinged doors over a hole in front of Santa's window, with a furnace pit below. The doors are
+        /// solid floor until the failure sequence swings them open.
+        /// </summary>
+        static TrapdoorSequence BuildTrapdoor(Transform room)
+        {
+            var yellow = Mat("Hazard Yellow", new Color(0.98f, 0.78f, 0.1f));
+            var black = Mat("Hazard Black", new Color(0.08f, 0.08f, 0.09f));
+            var soot = Mat("Pit Soot", new Color(0.18f, 0.1f, 0.08f));
+            var glow = Mat("Furnace Glow", new Color(1f, 0.45f, 0.1f), emission: new Color(1f, 0.35f, 0.05f) * 3f);
+
+            var root = new GameObject("Trapdoor").transform;
+            root.SetParent(room, false);
+            root.localPosition = new Vector3(0f, 0f, -2.5f);
+
+            // Hazard frame around the hole.
+            Block("Frame North", root, new Vector3(0f, 0.003f, 1.4f), new Vector3(3f, 0.006f, 0.2f), yellow);
+            Block("Frame South", root, new Vector3(0f, 0.003f, -1.4f), new Vector3(3f, 0.006f, 0.2f), yellow);
+            Block("Frame West", root, new Vector3(-1.4f, 0.003f, 0f), new Vector3(0.2f, 0.006f, 2.6f), yellow);
+            Block("Frame East", root, new Vector3(1.4f, 0.003f, 0f), new Vector3(0.2f, 0.006f, 2.6f), yellow);
+
+            // Doors: each hinge sits on an outer edge; its door swings down around the hinge's Z axis.
+            var leftHinge = new GameObject("Left Hinge").transform;
+            leftHinge.SetParent(root, false);
+            leftHinge.localPosition = new Vector3(-1.3f, -0.025f, 0f);
+            Block("Left Door", leftHinge, new Vector3(0.65f, 0f, 0f), new Vector3(1.3f, 0.05f, 2.6f), black, keepCollider: true);
+            Block("Left Stripe", leftHinge, new Vector3(0.65f, 0.026f, 0f), new Vector3(0.12f, 0.002f, 2.4f), yellow);
+
+            var rightHinge = new GameObject("Right Hinge").transform;
+            rightHinge.SetParent(root, false);
+            rightHinge.localPosition = new Vector3(1.3f, -0.025f, 0f);
+            Block("Right Door", rightHinge, new Vector3(-0.65f, 0f, 0f), new Vector3(1.3f, 0.05f, 2.6f), black, keepCollider: true);
+            Block("Right Stripe", rightHinge, new Vector3(-0.65f, 0.026f, 0f), new Vector3(0.12f, 0.002f, 2.4f), yellow);
+
+            Label(root, "PERFORMANCE REVIEW AREA", new Vector3(0f, 0.01f, -1.75f), Quaternion.Euler(90f, 0f, 0f), 0.05f, new Color(1f, 0.8f, 0.1f));
+
+            // Furnace pit: sooty walls and a glowing floor 6 m down.
+            var pit = new GameObject("Furnace Pit").transform;
+            pit.SetParent(root, false);
+            Block("Pit Wall North", pit, new Vector3(0f, -3.2f, 1.4f), new Vector3(2.8f, 6f, 0.2f), soot, keepCollider: true);
+            Block("Pit Wall South", pit, new Vector3(0f, -3.2f, -1.4f), new Vector3(2.8f, 6f, 0.2f), soot, keepCollider: true);
+            Block("Pit Wall West", pit, new Vector3(-1.4f, -3.2f, 0f), new Vector3(0.2f, 6f, 2.6f), soot, keepCollider: true);
+            Block("Pit Wall East", pit, new Vector3(1.4f, -3.2f, 0f), new Vector3(0.2f, 6f, 2.6f), soot, keepCollider: true);
+            Block("Furnace Floor", pit, new Vector3(0f, -6.3f, 0f), new Vector3(2.8f, 0.2f, 2.8f), glow, keepCollider: true);
+
+            var light = new GameObject("Furnace Light").AddComponent<Light>();
+            light.transform.SetParent(pit, false);
+            light.transform.localPosition = new Vector3(0f, -4.5f, 0f);
+            light.type = LightType.Point;
+            light.color = new Color(1f, 0.45f, 0.1f);
+            light.range = 9f;
+            light.intensity = 0f;
+
+            // The player is pulled here, facing Santa's window, before the drop.
+            var standPoint = new GameObject("Stand Point").transform;
+            standPoint.SetParent(root, false);
+            standPoint.localRotation = Quaternion.Euler(0f, 180f, 0f);
+
+            var sequence = root.gameObject.AddComponent<TrapdoorSequence>();
+            Assign(sequence, "leftHinge", leftHinge);
+            Assign(sequence, "rightHinge", rightHinge);
+            Assign(sequence, "furnaceLight", light);
+            Assign(sequence, "standPoint", standPoint);
+            return sequence;
+        }
+
+        /// <summary>The CLOCK IN post near the spawn point: the explicit Start Shift action.</summary>
+        static void BuildTimeClock(WorkdayManager workday)
+        {
+            var root = new GameObject("Time Clock").transform;
+            root.position = new Vector3(-1.2f, 0f, 0.6f);
+            var post = Block("Post", root, new Vector3(0f, 0.55f, 0f), new Vector3(0.3f, 1.1f, 0.3f), Mat("Santa Red", Color.red), keepCollider: true);
+            post.name = "Post";
+            Block("Clock Face", root, new Vector3(0f, 1.3f, -0.16f), new Vector3(0.36f, 0.36f, 0.02f), Mat("Bulb", Color.yellow));
+
+            var button = new GameObject("Clock In Button");
+            button.transform.SetParent(root, false);
+            button.transform.localPosition = new Vector3(0f, 1.15f, -0.12f);
+            var box = button.AddComponent<BoxCollider>();
+            box.size = new Vector3(0.34f, 0.12f, 0.3f);
+            Block("Visual", button.transform, Vector3.zero, new Vector3(0.34f, 0.12f, 0.3f), Mat("Button Green", new Color(0.2f, 0.85f, 0.3f), emission: new Color(0.1f, 0.5f, 0.15f)));
+            var shiftButton = button.AddComponent<ShiftButton>();
+            Assign(shiftButton, "workday", workday);
+
+            Label(root, "CLOCK IN", new Vector3(0f, 1.7f, -0.16f), Quaternion.identity, 0.05f, new Color(0.6f, 1f, 0.6f));
         }
 
         // ---------------------------------------------------------------- Stations
 
-        static void BuildStations(ToyPrefabs toys, TestDeliveryBatch batch, ShipmentCounter counter)
+        static DeliveryChute BuildStations(ToyPrefabs toys, TestDeliveryBatch batch, ShipmentCounter counter, WorkdayManager workday)
         {
             var stations = new GameObject("Stations").transform;
             var metal = Mat("Metal Grey", new Color(0.5f, 0.52f, 0.55f));
@@ -252,6 +345,7 @@ namespace ElfAndSafety.EditorTools
             Assign(delivery, "windingKeyPrefab", toys.WindingKey);
             AssignArray(delivery, "spawnPoints", spawnPoints);
             Assign(delivery, "statusLabel", deliveryStatus);
+            Assign(delivery, "workday", workday);
 
             // Salvage bench: work area on the left, loose parts tray on the right.
             var salvage = Station(stations, "Salvage Bench", new Vector3(-3f, 0f, 4.8f), Quaternion.identity, new Vector3(2.4f, 0.9f, 0.9f), metal);
@@ -331,8 +425,10 @@ namespace ElfAndSafety.EditorTools
             var shippingChute = mouth.AddComponent<ShippingChute>();
             Label(shipping, "SHIPPING", new Vector3(0f, 2.95f, -0.2f), Quaternion.identity, 0.06f, Color.white);
             Assign(shippingChute, "counter", counter);
+            Assign(shippingChute, "workday", workday);
             AssignArray(shippingChute, "rejectDropPoints", rejectPoints);
             Assign(shippingChute, "statusLabel", Label(shipping, "", new Vector3(0f, 2.5f, -0.2f), Quaternion.identity, 0.045f, Color.white));
+            return delivery;
         }
 
         // ---------------------------------------------------------------- Player and HUD
@@ -407,7 +503,7 @@ namespace ElfAndSafety.EditorTools
             return root;
         }
 
-        static void BuildHud(PlayerInteractor player, ShipmentCounter counter)
+        static void BuildHud(PlayerInteractor player, WorkdayManager workday)
         {
             var canvasObject = new GameObject("HUD");
             var canvas = canvasObject.AddComponent<Canvas>();
@@ -426,7 +522,8 @@ namespace ElfAndSafety.EditorTools
             var info = HudText(canvasObject.transform, "Look Info", new Vector2(0f, -115f), 24, TextAnchor.UpperCenter, new Vector2(0.5f, 0.5f));
             var feedback = HudText(canvasObject.transform, "Feedback", new Vector2(0f, 180f), 32, TextAnchor.LowerCenter, new Vector2(0.5f, 0.5f));
             var carry = HudText(canvasObject.transform, "Carry Label", new Vector2(0f, 60f), 28, TextAnchor.LowerCenter, new Vector2(0.5f, 0f));
-            var shipped = HudText(canvasObject.transform, "Shipped Counter", new Vector2(-24f, -20f), 30, TextAnchor.UpperRight, new Vector2(1f, 1f));
+            var shift = HudText(canvasObject.transform, "Shift Status", new Vector2(0f, -70f), 32, TextAnchor.UpperCenter, new Vector2(0.5f, 1f));
+            shift.rectTransform.sizeDelta = new Vector2(1500f, 80f);
             var controls = HudText(canvasObject.transform, "Controls", new Vector2(24f, -20f), 22, TextAnchor.UpperLeft, new Vector2(0f, 1f));
             controls.text = "WASD move   Mouse look   Shift sprint   Space hop\nE / Click interact   Q drop   Esc release mouse";
             controls.color = new Color(1f, 1f, 1f, 0.7f);
@@ -439,8 +536,51 @@ namespace ElfAndSafety.EditorTools
             Assign(hud, "crosshair", crosshair);
             Assign(hud, "infoLabel", info);
             Assign(hud, "feedbackLabel", feedback);
-            Assign(hud, "shippedLabel", shipped);
-            Assign(hud, "counter", counter);
+
+            BuildVerdictPanel(canvasObject.transform, canvasObject, workday, shift);
+
+            var eventSystem = new GameObject("EventSystem");
+            eventSystem.AddComponent<EventSystem>();
+            eventSystem.AddComponent<InputSystemUIInputModule>().AssignDefaultActions();
+        }
+
+        /// <summary>Santa's verdict: a dimmed full-screen panel with a title, his line, and the restart button.</summary>
+        static void BuildVerdictPanel(Transform canvas, GameObject hudObject, WorkdayManager workday, Text shiftLabel)
+        {
+            var panel = new GameObject("Verdict Panel").AddComponent<Image>();
+            panel.transform.SetParent(canvas, false);
+            panel.color = new Color(0.08f, 0.02f, 0.02f, 0.82f);
+            panel.rectTransform.anchorMin = Vector2.zero;
+            panel.rectTransform.anchorMax = Vector2.one;
+            panel.rectTransform.offsetMin = Vector2.zero;
+            panel.rectTransform.offsetMax = Vector2.zero;
+
+            var title = HudText(panel.transform, "Verdict Title", new Vector2(0f, 170f), 72, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f));
+            title.rectTransform.sizeDelta = new Vector2(1400f, 120f);
+            title.color = new Color(1f, 0.82f, 0.2f);
+            var message = HudText(panel.transform, "Verdict Message", new Vector2(0f, 10f), 36, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f));
+            message.rectTransform.sizeDelta = new Vector2(1400f, 220f);
+            message.horizontalOverflow = HorizontalWrapMode.Wrap;
+
+            var buttonImage = new GameObject("Restart Button").AddComponent<Image>();
+            buttonImage.transform.SetParent(panel.transform, false);
+            buttonImage.color = new Color(0.2f, 0.7f, 0.3f);
+            buttonImage.rectTransform.sizeDelta = new Vector2(380f, 90f);
+            buttonImage.rectTransform.anchoredPosition = new Vector2(0f, -190f);
+            var button = buttonImage.gameObject.AddComponent<Button>();
+            var buttonLabel = HudText(buttonImage.transform, "Label", Vector2.zero, 36, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f));
+            buttonLabel.rectTransform.sizeDelta = new Vector2(380f, 90f);
+
+            panel.gameObject.SetActive(false);
+
+            var hud = hudObject.AddComponent<WorkdayHud>();
+            Assign(hud, "workday", workday);
+            Assign(hud, "shiftLabel", shiftLabel);
+            Assign(hud, "verdictPanel", panel.gameObject);
+            Assign(hud, "verdictTitle", title);
+            Assign(hud, "verdictMessage", message);
+            Assign(hud, "restartButton", button);
+            Assign(hud, "restartButtonLabel", buttonLabel);
         }
 
         static Text HudText(Transform parent, string name, Vector2 position, int size, TextAnchor anchor, Vector2 pivot)
